@@ -68,12 +68,12 @@ logger:
 
 api:
   encryption:
-    # Per-device key (HA ESPHome builder convention: inlined, not in shared secrets).
-    key: "Mx5q3UYwvg7EhVpuPfeKyOmrbTc/NxCZoRKqkjO3+1U="
+    # Per-device key — kept in HA's secrets.yaml, NEVER in this repo.
+    key: !secret api_encryption_key
 
 ota:
   - platform: esphome
-    password: "h0Idir6FrCdnleGi7QfD5BYf-4r_rwHd"
+    password: !secret ota_password
 
 wifi:
   ssid: !secret wifi_ssid
