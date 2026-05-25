@@ -1,0 +1,270 @@
+# reTerminal E1001 ePaper dashboard firmware
+#
+# Pin assignments verified against Seeed's official ESPHome cookbook:
+#   https://wiki.seeedstudio.com/reterminal_e10xx_with_esphome/
+#   https://wiki.seeedstudio.com/reterminal_e10xx_with_esphome_advanced/
+#
+# Hardware:
+#   - 7.5" monochrome ePaper, 800x480, Ultrachip UC8179 controller (waveshare 7.50inv2)
+#   - ESP32-S3R8 (8 MB octal PSRAM)
+#   - Onboard Sensirion SHT4x temp/humidity on I²C (SDA=GPIO19, SCL=GPIO20)
+#   - Battery sense on GPIO1 (requires GPIO21 enable, divider ratio 2.0)
+#   - 3 buttons: GPIO3 (green), GPIO4 (right white), GPIO5 (left white)
+#   - LED on GPIO6, buzzer on GPIO45
+#
+# Strategy: device wakes, reads onboard sensors, pushes them as URL params
+# to our HA add-on, fetches the rendered 1-bit BMP, displays, deep-sleeps.
+
+substitutions:
+  device_name: doordash
+  friendly_name: "Door Dashboard"
+  # First-boot target: this laptop running the addon locally.
+  # Switch to homeassistant.local:8099 once deployed as an HA add-on.
+  dashboard_host: "homeassistant.local:8099"
+  refresh_interval: "15min"
+  # Development toggle: keep the device awake & refresh on a timer instead of
+  # the deep-sleep wake cycle. Set to "0" once you're ready for battery
+  # operation (and re-flash). Must be 1 or 0 — used as C preprocessor literal.
+  dev_mode: "1"
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  on_boot:
+    # Early hardware init: enable battery sense rail before anything else.
+    - priority: 600
+      then:
+        - output.turn_on: bsp_battery_enable
+    # Late boot: now that all components (incl. deep_sleep) are constructed,
+    # decide whether to stay awake for OTA / debugging.
+    - priority: -100
+      then:
+        - lambda: |-
+            #if ${dev_mode}
+              ESP_LOGW("boot", "DEV MODE — deep sleep disabled, refreshing on interval");
+              id(deep_sleeper).prevent_deep_sleep();
+            #else
+              esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+              if (cause == ESP_SLEEP_WAKEUP_EXT0 || cause == ESP_SLEEP_WAKEUP_EXT1 ||
+                  cause == ESP_SLEEP_WAKEUP_GPIO) {
+                ESP_LOGW("boot", "Woken by button — OTA safe mode, deep sleep disabled");
+                id(deep_sleeper).prevent_deep_sleep();
+              } else {
+                ESP_LOGI("boot", "Normal wake (cause=%d) — refresh cycle", (int) cause);
+              }
+            #endif
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    # Per-device key (HA ESPHome builder convention: inlined, not in shared secrets).
+    key: "Mx5q3UYwvg7EhVpuPfeKyOmrbTc/NxCZoRKqkjO3+1U="
+
+ota:
+  - platform: esphome
+    password: "h0Idir6FrCdnleGi7QfD5BYf-4r_rwHd"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+  power_save_mode: NONE
+  ap:
+    ssid: "Doordash-Setup"
+    password: "doordash-setup"
+  on_connect:
+    then:
+      - logger.log: "Wi-Fi connected — priming sensors"
+      - component.update: indoor_sht4x
+      # Battery rail needs ~100ms to stabilise after GPIO21 turns on; we
+      # already turned it on in on_boot priority 600, but give the ADC
+      # input cap time to settle then take a fresh reading.
+      - delay: 500ms
+      - component.update: battery_voltage
+      - delay: 1500ms
+      - component.update: battery_pct
+      - script.execute: refresh_dashboard
+
+captive_portal:
+
+# Refresh script: build the URL from current sensor values, then fetch.
+# Called on Wi-Fi connect and (in dev mode) on a periodic interval.
+script:
+  - id: refresh_dashboard
+    mode: single
+    then:
+      - logger.log: "Building dashboard URL with sensor values"
+      - lambda: |-
+          char buf[256];
+          float t = id(indoor_temp).state;
+          float h = id(indoor_hum).state;
+          float b = id(battery_pct).state;
+          int n = snprintf(buf, sizeof(buf), "http://${dashboard_host}/dashboard.bmp?");
+          if (!isnan(t)) n += snprintf(buf + n, sizeof(buf) - n, "indoor_temp=%.1f&", t);
+          if (!isnan(h)) n += snprintf(buf + n, sizeof(buf) - n, "indoor_hum=%.1f&", h);
+          if (!isnan(b)) n += snprintf(buf + n, sizeof(buf) - n, "battery_pct=%.0f&", b);
+          ESP_LOGI("dashboard", "URL: %s", buf);
+          id(dashboard_img).set_url(std::string(buf));
+      - component.update: dashboard_img
+
+# Dev-mode periodic refresh. In normal (deep-sleep) operation this fires
+# once per wake cycle and is harmless; in dev mode it's how we keep the
+# display updating without ever sleeping.
+interval:
+  - interval: ${refresh_interval}
+    then:
+      - component.update: indoor_sht4x
+      - delay: 500ms
+      - component.update: battery_voltage
+      - delay: 1500ms
+      - component.update: battery_pct
+      - script.execute: refresh_dashboard
+
+# Deep sleep loop: wake -> fetch image -> render -> sleep.
+# Right white button (GPIO4) wakes from sleep for OTA / debugging.
+deep_sleep:
+  id: deep_sleeper
+  run_duration: 45s
+  sleep_duration: ${refresh_interval}
+  wakeup_pin: GPIO4
+  wakeup_pin_mode: INVERT_WAKEUP
+
+http_request:
+  verify_ssl: false
+  timeout: 20s
+  watchdog_timeout: 25s
+
+# Download the BMP from the HA add-on with current sensor values as query
+# parameters. Renderer caches on the (rounded) values so identical wakes
+# are served from cache.
+online_image:
+  - id: dashboard_img
+    url: "http://${dashboard_host}/dashboard.bmp"
+    format: BMP
+    type: BINARY
+    update_interval: never
+    on_download_finished:
+      then:
+        - logger.log: "Image downloaded — refreshing display"
+        - component.update: epaper
+        - delay: 3s
+        - deep_sleep.enter: deep_sleeper
+    on_error:
+      then:
+        - logger.log: "Image download failed — sleeping anyway"
+        - delay: 1s
+        - deep_sleep.enter: deep_sleeper
+
+# === SPI bus for the ePaper (verified pins) ===
+spi:
+  clk_pin: GPIO7
+  mosi_pin: GPIO9
+
+# === DISPLAY ===
+display:
+  - platform: waveshare_epaper
+    id: epaper
+    model: 7.50inv2
+    cs_pin: GPIO10
+    dc_pin: GPIO11
+    reset_pin:
+      number: GPIO12
+      inverted: false
+    busy_pin:
+      number: GPIO13
+      inverted: true
+    rotation: 0
+    update_interval: never
+    lambda: |-
+      it.image(0, 0, id(dashboard_img));
+
+# === I²C (onboard SHT4x) — verified pins ===
+i2c:
+  sda: GPIO19
+  scl: GPIO20
+  frequency: 100kHz
+
+# === Time from Home Assistant ===
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# === Outputs ===
+output:
+  # Battery sense enable — MUST be on to read GPIO1 ADC.
+  - platform: gpio
+    pin: GPIO21
+    id: bsp_battery_enable
+
+# === Sensors ===
+sensor:
+  # Onboard temperature + humidity
+  - platform: sht4x
+    id: indoor_sht4x
+    temperature:
+      id: indoor_temp
+      name: "Indoor Temperature"
+    humidity:
+      id: indoor_hum
+      name: "Indoor Humidity"
+    update_interval: 15min
+
+  # Battery voltage via onboard divider (GPIO1, divider ratio 2.0).
+  # Filters smooth out the noisy ADC and reject obvious bad reads
+  # (e.g. 0V when the rail hasn't stabilised yet).
+  - platform: adc
+    pin: GPIO1
+    id: battery_voltage
+    name: "Battery Voltage"
+    attenuation: 12db
+    update_interval: 60s
+    filters:
+      - multiply: 2.0
+      # Drop implausibly low readings (rail still settling or disabled).
+      - lambda: |-
+          if (x < 2.5f) return {};
+          return x;
+      # Smooth out single-sample ADC noise.
+      - sliding_window_moving_average:
+          window_size: 4
+          send_every: 1
+
+  # Derived battery percentage using Seeed's calibration curve.
+  - platform: template
+    id: battery_pct
+    name: "Battery Percentage"
+    unit_of_measurement: "%"
+    icon: "mdi:battery"
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 0
+    lambda: 'return id(battery_voltage).state;'
+    update_interval: 60s
+    filters:
+      - calibrate_linear:
+          - 4.15 -> 100.0
+          - 3.96 -> 90.0
+          - 3.91 -> 80.0
+          - 3.85 -> 70.0
+          - 3.80 -> 60.0
+          - 3.75 -> 50.0
+          - 3.68 -> 40.0
+          - 3.58 -> 30.0
+          - 3.49 -> 20.0
+          - 3.41 -> 10.0
+          - 3.30 -> 5.0
+          - 3.27 -> 0.0
+      - clamp:
+          min_value: 0
+          max_value: 100

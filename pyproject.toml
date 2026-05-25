@@ -1,0 +1,34 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [
+  ".venv",
+  "preview",
+  "firmware",  # ESPHome YAML, not Python
+]
+
+[tool.ruff.lint]
+# A sensible default set: pyflakes, pycodestyle errors/warnings, isort, bugbear,
+# comprehension, pyupgrade, simplify, naming.
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "C4",  # flake8-comprehensions
+  "UP",  # pyupgrade
+  "SIM", # flake8-simplify
+  "N",   # pep8-naming
+]
+ignore = [
+  "E501",  # line length handled by formatter
+  "B008",  # FastAPI uses function-call defaults (Query(...), Depends(...))
+]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["E402"]  # late imports after sys.path manipulation
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

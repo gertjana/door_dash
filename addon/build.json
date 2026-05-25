@@ -1,0 +1,11 @@
+{
+  "name": "ePaper Dashboard",
+  "description": "Renders an 800x480 1-bit dashboard image for the reTerminal E1001",
+  "url": "https://github.com/gertjana/door_dash",
+  "maintainer": "gertjana",
+  "build_from": {
+    "aarch64": "ghcr.io/home-assistant/aarch64-base-python:3.12-alpine3.20",
+    "amd64": "ghcr.io/home-assistant/amd64-base-python:3.12-alpine3.20",
+    "armv7": "ghcr.io/home-assistant/armv7-base-python:3.12-alpine3.20"
+  }
+}

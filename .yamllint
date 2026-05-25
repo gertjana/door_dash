@@ -1,0 +1,29 @@
+---
+extends: default
+
+rules:
+  line-length:
+    max: 120
+    level: warning
+  # ESPHome / HA YAML uses 2-space indent; allow trailing comments.
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+  # Truthy keys (on:, off:) are common in HA/ESPHome configs.
+  truthy:
+    allowed-values: ["true", "false", "on", "off", "yes", "no"]
+    check-keys: false
+  # Some HA YAML uses long URLs / inline tokens.
+  comments:
+    min-spaces-from-content: 1
+  document-start:
+    present: false
+  braces:
+    max-spaces-inside: 1
+  brackets:
+    max-spaces-inside: 1
+
+ignore: |
+  .venv/
+  preview/
+  /tmp/
