@@ -17,6 +17,7 @@ COPY requirements.txt /opt/app/requirements.txt
 RUN pip install --no-cache-dir -r /opt/app/requirements.txt
 
 COPY app /opt/app/app
+COPY config.yaml /opt/app/config.yaml
 COPY run.sh /run.sh
 RUN chmod +x /run.sh
 
