@@ -42,9 +42,9 @@ def render_all() -> None:
 
             c = TestClient(app)
             c.post("/refresh")
-            qs = _qs(params)
-            png = c.get(f"/dashboard.png?{qs}" if qs else "/dashboard.png").content
-            bmp = c.get(f"/dashboard.bmp?{qs}" if qs else "/dashboard.bmp").content
+            qs = _qs({**params, "fw": "0.2.0"})
+            png = c.get(f"/dashboard.png?{qs}").content
+            bmp = c.get(f"/dashboard.bmp?{qs}").content
             with open(f"preview/{name}.png", "wb") as f:
                 f.write(png)
             with open(f"preview/{name}.bmp", "wb") as f:

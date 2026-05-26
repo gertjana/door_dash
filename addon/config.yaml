@@ -1,5 +1,5 @@
 name: ePaper Dashboard
-version: "0.1.0"
+version: "0.2.0"
 slug: epaper_dashboard
 description: Renders an 800x480 1-bit dashboard image for the reTerminal E1001
 url: https://github.com/anomalyco/reterminal_dashboard

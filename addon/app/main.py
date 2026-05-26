@@ -10,6 +10,7 @@ from threading import Lock
 from fastapi import FastAPI, Query, Response
 from fastapi.responses import HTMLResponse
 
+from . import __version__ as ADDON_VERSION  # noqa: N812
 from .config import Settings, get_settings
 from .render.image_io import to_bmp_bytes, to_png_bytes
 from .render.layout import compose
@@ -33,8 +34,10 @@ def _bucket(settings: Settings) -> int:
     return int(time.time() // max(1, settings.refresh_cache_seconds))
 
 
-def _lookup_or_render(settings: Settings, sensors: LocalSensors) -> tuple[dict, bool]:
-    key = (sensors.cache_key(), _bucket(settings))
+def _lookup_or_render(
+    settings: Settings, sensors: LocalSensors, fw_version: str | None
+) -> tuple[dict, bool]:
+    key = (sensors.cache_key(), _bucket(settings), fw_version or "")
     with _cache_lock:
         entry = _cache.get(key)
         if entry is not None:
@@ -43,7 +46,7 @@ def _lookup_or_render(settings: Settings, sensors: LocalSensors) -> tuple[dict, 
             return entry, True
 
     # Render outside the lock (Pillow + HTTP calls)
-    img = compose(settings, sensors)
+    img = compose(settings, sensors, fw_version=fw_version)
     entry = {
         "ts": time.time(),
         "bmp": to_bmp_bytes(img),
@@ -71,7 +74,7 @@ def _build_sensors(
 
 @app.get("/healthz")
 def healthz() -> dict:
-    return {"ok": True, "cache_entries": len(_cache)}
+    return {"ok": True, "cache_entries": len(_cache), "addon_version": ADDON_VERSION}
 
 
 @app.get("/dashboard.bmp")
@@ -79,10 +82,11 @@ def dashboard_bmp(
     indoor_temp: float | None = Query(default=None),
     indoor_hum: float | None = Query(default=None),
     battery_pct: float | None = Query(default=None),
+    fw: str | None = Query(default=None),
 ) -> Response:
     settings = get_settings()
     sensors = _build_sensors(indoor_temp, indoor_hum, battery_pct)
-    entry, hit = _lookup_or_render(settings, sensors)
+    entry, hit = _lookup_or_render(settings, sensors, fw)
     return Response(
         content=entry["bmp"],
         media_type="image/bmp",
@@ -95,10 +99,11 @@ def dashboard_png(
     indoor_temp: float | None = Query(default=None),
     indoor_hum: float | None = Query(default=None),
     battery_pct: float | None = Query(default=None),
+    fw: str | None = Query(default=None),
 ) -> Response:
     settings = get_settings()
     sensors = _build_sensors(indoor_temp, indoor_hum, battery_pct)
-    entry, hit = _lookup_or_render(settings, sensors)
+    entry, hit = _lookup_or_render(settings, sensors, fw)
     return Response(
         content=entry["png"],
         media_type="image/png",

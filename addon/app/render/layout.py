@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw
 
+from .. import __version__ as ADDON_VERSION  # noqa: N812
 from ..config import Settings
 from ..sources import calendar as calendar_src
 from ..sources import tesla as tesla_src
@@ -46,7 +47,11 @@ def _hr(draw: ImageDraw.ImageDraw, left: Box, y: int) -> None:
     draw.line((left.x + 8, y, left.x + left.w - 8, y), fill=0, width=1)
 
 
-def compose(settings: Settings, sensors: LocalSensors | None = None) -> Image.Image:
+def compose(
+    settings: Settings,
+    sensors: LocalSensors | None = None,
+    fw_version: str | None = None,
+) -> Image.Image:
     if sensors is None:
         sensors = LocalSensors()
 
@@ -105,7 +110,31 @@ def compose(settings: Settings, sensors: LocalSensors | None = None) -> Image.Im
     # Refresh timestamp in the bottom-left footer strip.
     _draw_footer_timestamp(drw, settings, left_widget_h)
 
+    # Tiny version badge in the top-right corner: "v0.1.0 · fw0.1.0".
+    _draw_version_badge(drw, settings, fw_version)
+
     return img
+
+
+def _draw_version_badge(
+    draw: ImageDraw.ImageDraw, settings: Settings, fw_version: str | None
+) -> None:
+    fw = fw_version or "?"
+    text = f"v{ADDON_VERSION} \u00b7 fw{fw}"
+    f = font(10)
+    bbox = draw.textbbox((0, 0), text, font=f)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    # 4px right margin, 2px top margin; clear a tiny white pad so we don't
+    # collide visually with widget content (weather row sits just below).
+    pad = 2
+    x = settings.width - text_w - 4
+    y = 2
+    draw.rectangle(
+        (x - pad, y - pad, x + text_w + pad, y + text_h + pad),
+        fill=255,
+    )
+    draw_crisp_text(draw, (x, y), text, f, fill=0)
 
 
 def _draw_footer_timestamp(draw: ImageDraw.ImageDraw, settings: Settings, footer_top: int) -> None:

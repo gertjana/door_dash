@@ -18,6 +18,8 @@
 substitutions:
   device_name: doordash
   friendly_name: "Door Dashboard"
+  # Bump on every meaningful firmware change. Rendered top-right on the panel.
+  firmware_version: "0.2.0"
   # First-boot target: this laptop running the addon locally.
   # Switch to homeassistant.local:8099 once deployed as an HA add-on.
   dashboard_host: "homeassistant.local:8099"
@@ -30,6 +32,9 @@ substitutions:
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
+  project:
+    name: anomalyco.reterminal_dashboard
+    version: ${firmware_version}
   on_boot:
     # Early hardware init: enable battery sense rail before anything else.
     - priority: 600
@@ -110,7 +115,7 @@ script:
           float t = id(indoor_temp).state;
           float h = id(indoor_hum).state;
           float b = id(battery_pct).state;
-          int n = snprintf(buf, sizeof(buf), "http://${dashboard_host}/dashboard.bmp?");
+          int n = snprintf(buf, sizeof(buf), "http://${dashboard_host}/dashboard.bmp?fw=${firmware_version}&");
           if (!isnan(t)) n += snprintf(buf + n, sizeof(buf) - n, "indoor_temp=%.1f&", t);
           if (!isnan(h)) n += snprintf(buf + n, sizeof(buf) - n, "indoor_hum=%.1f&", h);
           if (!isnan(b)) n += snprintf(buf + n, sizeof(buf) - n, "battery_pct=%.0f&", b);
