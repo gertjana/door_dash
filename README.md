@@ -22,7 +22,7 @@ Renders Wi-Fi QR, weather, indoor sensors, and an upcoming calendar list.
 
 ```
 ┌─────────────────────┬─────────────────────────────────────────┐
-│  Wi-Fi              │  Weather                                │
+│  Wi-Fi              │  Weather                 v0.2.1 fw 0.3.0│
 │  [QR code]          │  [icon] 18°C   │  Tue   Wed   Thu       │
 │  SSID               │  Partlycloudy  │  ☼     ☁     ☼         │
 │                     │  Wind 12 km/h  │ 22/12 20/11 17/10      │
@@ -70,21 +70,14 @@ panel after a deploy.
 ## Firmware workflow
 
 The firmware lives in `firmware/reterminal-dashboard.yaml` and is built and
-flashed **from your Mac**, not from HA's ESPHome Device Builder add-on. The
-repo is the single source of truth.
+flashed **from your own machine**, not from HA's ESPHome Device Builder add-on.
+Building the firmware from HA is very slow.
 
-### Two things named "ESPHome" in HA — they are not the same
+### Optionally "ESPHome" in HA
 
-HA has two unrelated pieces of software both branded ESPHome. Confusing them
-will cost you an afternoon:
+ **ESPHome integration** Settings → Devices & services
+ Talks to a running ESPHome device over its Native API (port 6053) and exposes its sensors as HA entities.
 
-| Name | Where | What it does | We use it? |
-|---|---|---|---|
-| **ESPHome Device Builder** | Settings → Add-ons | Compiles firmware on the Pi from a YAML stored in `/config/esphome/`. | **No** — Pi is too slow and runs out of RAM. We build on Mac instead. |
-| **ESPHome integration** | Settings → Devices & services | Talks to a running ESPHome device over its Native API (port 6053) and exposes its sensors as HA entities. | **Yes** — gives us `sensor.indoor_temperature` etc. for history and automations. |
-
-The two are completely independent. You can use the integration without ever
-installing the add-on.
 
 ### First flash / recovery (USB)
 
@@ -122,16 +115,6 @@ OTA update:
 
 If mDNS is blocked on your network, supply the device IP explicitly:
 `esphome run firmware/reterminal-dashboard.yaml --device 192.168.50.159`.
-
-### Re-pairing the ESPHome integration
-
-Only needed if you rotate `api_encryption_key` in `firmware/secrets.yaml` and
-reflash. HA's integration stores the key separately, so after a key change:
-
-1. Wake the device (button)
-2. Settings → Devices & services → ESPHome → device → **Reconfigure** (or
-   delete + re-add if no banner appears)
-3. Paste the new key from `firmware/secrets.yaml`
 
 ## Local development
 
