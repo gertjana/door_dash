@@ -19,15 +19,20 @@ substitutions:
   device_name: doordash
   friendly_name: "Door Dashboard"
   # Bump on every meaningful firmware change. Rendered top-right on the panel.
-  firmware_version: "0.2.0"
+  firmware_version: "0.3.0"
   # First-boot target: this laptop running the addon locally.
   # Switch to homeassistant.local:8099 once deployed as an HA add-on.
   dashboard_host: "homeassistant.local:8099"
   refresh_interval: "15min"
   # Development toggle: keep the device awake & refresh on a timer instead of
-  # the deep-sleep wake cycle. Set to "0" once you're ready for battery
-  # operation (and re-flash). Must be 1 or 0 — used as C preprocessor literal.
-  dev_mode: "1"
+  # the deep-sleep wake cycle. Set to "0" for battery operation; set to "1"
+  # for active development. Must be 1 or 0 — used as C preprocessor literal.
+  #
+  # OTA workflow when dev_mode=0:
+  #   1. Press the right white button (GPIO4) — device wakes and stays awake.
+  #   2. `esphome run firmware/reterminal-dashboard.yaml` — pushes new firmware.
+  #   3. Device reboots into new firmware, runs one refresh, sleeps again.
+  dev_mode: "0"
 
 esphome:
   name: ${device_name}
