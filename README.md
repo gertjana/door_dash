@@ -53,6 +53,86 @@ small text (≤ 16 px), so glyphs stay sharp instead of getting eaten by the
 threshold pass. Large titles (20–28 px) keep AA since the rounded edges read
 fine on the panel.
 
+### Version badge
+
+A tiny `v{addon} · fw{firmware}` badge is rendered in the top-right corner of
+every image. The addon version is read at startup from `addon/config.yaml`'s
+`version:` field; the firmware version is sent by the device as a `?fw=`
+query parameter on every fetch. Bumping either side requires only:
+
+* **Addon**: edit `version:` in `addon/config.yaml`, redeploy
+* **Firmware**: edit `firmware_version:` in `firmware/reterminal-dashboard.yaml`,
+  reflash (USB or OTA)
+
+This gives you an at-a-glance way to confirm what's actually running on the
+panel after a deploy.
+
+## Firmware workflow
+
+The firmware lives in `firmware/reterminal-dashboard.yaml` and is built and
+flashed **from your Mac**, not from HA's ESPHome Device Builder add-on. The
+repo is the single source of truth.
+
+### Two things named "ESPHome" in HA — they are not the same
+
+HA has two unrelated pieces of software both branded ESPHome. Confusing them
+will cost you an afternoon:
+
+| Name | Where | What it does | We use it? |
+|---|---|---|---|
+| **ESPHome Device Builder** | Settings → Add-ons | Compiles firmware on the Pi from a YAML stored in `/config/esphome/`. | **No** — Pi is too slow and runs out of RAM. We build on Mac instead. |
+| **ESPHome integration** | Settings → Devices & services | Talks to a running ESPHome device over its Native API (port 6053) and exposes its sensors as HA entities. | **Yes** — gives us `sensor.indoor_temperature` etc. for history and automations. |
+
+The two are completely independent. You can use the integration without ever
+installing the add-on.
+
+### First flash / recovery (USB)
+
+```bash
+# 1. Set up a Python venv with esphome (one-time)
+python3.13 -m venv ~/.esphome-venv
+source ~/.esphome-venv/bin/activate
+pip install esphome
+
+# 2. Make sure firmware/secrets.yaml exists with the four required keys
+#    (wifi_ssid, wifi_password, api_encryption_key, ota_password).
+#    See firmware/secrets.yaml.example.
+
+# 3. Put device into download mode: hold BOOT → tap RESET → release BOOT
+# 4. Flash
+esphome run firmware/reterminal-dashboard.yaml --device /dev/cu.usbserial-110
+```
+
+### Subsequent updates (wireless OTA)
+
+Once the device is running with `dev_mode: "0"`, it deep-sleeps between
+refreshes and is unreachable over the network most of the time. To push an
+OTA update:
+
+1. Press the **right white button** (GPIO4) — wakes the device and pins it
+   awake (the on-boot lambda detects button wake-cause and calls
+   `prevent_deep_sleep()`).
+2. From the Mac (no `--device` flag needed; mDNS discovers `doordash.local`):
+   ```bash
+   source ~/.esphome-venv/bin/activate
+   esphome run firmware/reterminal-dashboard.yaml
+   ```
+3. Device receives the update, reboots, fetches one image, then sleeps on
+   the next cycle.
+
+If mDNS is blocked on your network, supply the device IP explicitly:
+`esphome run firmware/reterminal-dashboard.yaml --device 192.168.50.159`.
+
+### Re-pairing the ESPHome integration
+
+Only needed if you rotate `api_encryption_key` in `firmware/secrets.yaml` and
+reflash. HA's integration stores the key separately, so after a key change:
+
+1. Wake the device (button)
+2. Settings → Devices & services → ESPHome → device → **Reconfigure** (or
+   delete + re-add if no banner appears)
+3. Paste the new key from `firmware/secrets.yaml`
+
 ## Local development
 
 You can preview layouts in a browser without the physical device:
