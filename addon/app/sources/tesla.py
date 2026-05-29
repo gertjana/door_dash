@@ -1,8 +1,13 @@
-"""Tesla source: reads battery percentage from a Home Assistant sensor entity.
+"""Tesla source: reads battery %, range, cabin temp + climate state from HA.
 
-The HA entity to read is configurable (`tesla_battery_entity`). Until the
-user has set up the Tesla integration in HA, this source returns a stub
-fallback so the widget always renders during development.
+Each entity is independently optional; whichever is configured gets read.
+When HA is unreachable, or no battery entity is configured, returns demo
+fallback data so the widget always renders during development / pre-setup.
+
+`climate_on` is True only when the climate entity reports a non-off mode.
+While the car is asleep, the climate entity goes unknown/unavailable; in
+that case `climate_on` is None (we can't tell) and the widget should hide
+the indicator rather than imply it's off.
 """
 
 from __future__ import annotations
@@ -16,11 +21,13 @@ from ..ha_client import HAClient
 @dataclass
 class TeslaState:
     battery_pct: float | None = None
-    charging: bool = False
     range_km: float | None = None
+    inside_temp_c: float | None = None
+    climate_on: bool | None = None  # None = unknown (car asleep)
 
 
-_FALLBACK = TeslaState(battery_pct=73.0, charging=False, range_km=309.0)
+_FALLBACK = TeslaState(battery_pct=73.0, range_km=309.0, inside_temp_c=None, climate_on=None)
+_UNKNOWN_STATES = {"unknown", "unavailable", "none", ""}
 
 
 def _to_float(value) -> float | None:
@@ -30,31 +37,39 @@ def _to_float(value) -> float | None:
         return None
 
 
+def _read_float(ha: HAClient, entity_id: str) -> float | None:
+    if not entity_id:
+        return None
+    state = ha.get_state(entity_id)
+    if not state:
+        return None
+    return _to_float(state.get("state"))
+
+
+def _read_climate_on(ha: HAClient, entity_id: str) -> bool | None:
+    """Return True if climate is on, False if off, None if unknown/asleep."""
+    if not entity_id:
+        return None
+    state = ha.get_state(entity_id)
+    if not state:
+        return None
+    raw = (state.get("state") or "").strip().lower()
+    if raw in _UNKNOWN_STATES:
+        return None
+    return raw != "off"
+
+
 def fetch(settings: Settings) -> TeslaState:
     ha = HAClient(settings)
     if not ha.available:
-        # No HA connection (local dev). Show fallback so the widget is visible.
         return _FALLBACK
 
     if not settings.tesla_battery_entity:
-        # HA reachable but Tesla integration not yet configured — show fake
-        # demo data so screenshots / dashboard look complete until Tesla
-        # Fleet API approval lands.
         return _FALLBACK
 
-    state = ha.get_state(settings.tesla_battery_entity)
-    if not state:
-        return _FALLBACK
-
-    battery_pct = _to_float(state.get("state"))
-    attrs = state.get("attributes", {}) or {}
-    range_km = _to_float(attrs.get("range") or attrs.get("estimated_range"))
-
-    charging = False
-    if settings.tesla_charging_entity:
-        ch = ha.get_state(settings.tesla_charging_entity)
-        if ch:
-            ch_state = (ch.get("state") or "").lower()
-            charging = ch_state in ("charging", "on", "true")
-
-    return TeslaState(battery_pct=battery_pct, charging=charging, range_km=range_km)
+    return TeslaState(
+        battery_pct=_read_float(ha, settings.tesla_battery_entity),
+        range_km=_read_float(ha, settings.tesla_range_entity),
+        inside_temp_c=_read_float(ha, settings.tesla_inside_temp_entity),
+        climate_on=_read_climate_on(ha, settings.tesla_climate_entity),
+    )

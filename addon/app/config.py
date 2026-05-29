@@ -46,12 +46,14 @@ class Settings(BaseSettings):
     calendar_entities: list[str] = Field(default_factory=lambda: ["calendar.personal"])
     max_events: int = 8
 
-    # Tesla — HA entity that reports battery % (set once configured in HA).
-    # `show_tesla` controls visibility; entity is read when set, otherwise the
-    # widget renders fallback/placeholder values.
+    # Tesla — HA entities from the Tesla Fleet integration. Each is optional;
+    # whatever is set gets read. `show_tesla` toggles widget visibility.
+    # `tesla_charging_entity` is intentionally absent: rarely charged at home.
     show_tesla: bool = True
-    tesla_battery_entity: str = ""
-    tesla_charging_entity: str = ""  # optional, used to show charging indicator
+    tesla_battery_entity: str = ""  # e.g. sensor.finn_mccool_battery_level
+    tesla_range_entity: str = ""  # e.g. sensor.finn_mccool_battery_range
+    tesla_inside_temp_entity: str = ""  # e.g. sensor.finn_mccool_inside_temperature
+    tesla_climate_entity: str = ""  # e.g. climate.finn_mccool_climate
 
     # Local sensors (pushed by device via query params)
     show_local_sensors: bool = True

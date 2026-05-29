@@ -191,6 +191,7 @@ def index() -> str:
           <label>Temp °C</label><input id="t" type="number" step="0.1" value="21.3">
           <label>Hum %</label><input id="h" type="number" step="1" value="48">
           <label>Bat %</label><input id="b" type="number" step="1" value="87">
+          <label>fw</label><input id="fw" type="text" style="width:80px" value="0.3.0">
           <button>Preview</button>
           <button type="button" onclick="document.getElementById('t').value='';document.getElementById('h').value='';document.getElementById('b').value='';reload();">Cold boot (no sensors)</button>
         </form>
@@ -201,10 +202,12 @@ def index() -> str:
           const t = document.getElementById('t').value;
           const h = document.getElementById('h').value;
           const b = document.getElementById('b').value;
+          const fw = document.getElementById('fw').value;
           const qs = new URLSearchParams();
           if (t !== '') qs.set('indoor_temp', t);
           if (h !== '') qs.set('indoor_hum', h);
           if (b !== '') qs.set('battery_pct', b);
+          if (fw !== '') qs.set('fw', fw);
           qs.set('_', Date.now());
           document.getElementById('img').src = 'dashboard.png?' + qs.toString();
         }

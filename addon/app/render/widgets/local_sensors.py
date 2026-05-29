@@ -67,7 +67,10 @@ def render(sensors: LocalSensors, img: Image.Image, box: Box) -> None:
 
     # Quadrant geometry
     content_top = box.y + 32
-    content_bottom = box.y + box.h
+    # Reserve a few pixels at the bottom so the battery % label doesn't kiss
+    # the horizontal divider line drawn between widgets.
+    bottom_pad = 8
+    content_bottom = box.y + box.h - bottom_pad
     content_h = content_bottom - content_top
     half_w = box.w // 2
     half_h = content_h // 2

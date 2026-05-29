@@ -1,8 +1,8 @@
 name: ePaper Dashboard
-version: "0.2.1"
+version: "0.3.5"
 slug: epaper_dashboard
 description: Renders an 800x480 1-bit dashboard image for the reTerminal E1001
-url: https://github.com/anomalyco/reterminal_dashboard
+url: https://github.com/gertjana/door_dash
 arch:
   - aarch64
   - amd64
@@ -33,7 +33,9 @@ options:
   show_local_sensors: true
   show_tesla: true
   tesla_battery_entity: ""
-  tesla_charging_entity: ""
+  tesla_range_entity: ""
+  tesla_inside_temp_entity: ""
+  tesla_climate_entity: ""
 
 schema:
   wifi_ssid: str
@@ -49,4 +51,6 @@ schema:
   show_local_sensors: bool
   show_tesla: bool
   tesla_battery_entity: str?
-  tesla_charging_entity: str?
+  tesla_range_entity: str?
+  tesla_inside_temp_entity: str?
+  tesla_climate_entity: str?

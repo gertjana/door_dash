@@ -78,11 +78,11 @@ def compose(
     show_tesla = settings.show_tesla
 
     # Left-column row weights (sum normalised to fill height)
-    weights: list[tuple[str, float]] = [("qr", 0.50)]
+    weights: list[tuple[str, float]] = [("qr", 0.46)]
     if show_sensors:
-        weights.append(("sensors", 0.28))
+        weights.append(("sensors", 0.26))
     if show_tesla:
-        weights.append(("tesla", 0.22))
+        weights.append(("tesla", 0.28))
 
     total_weight = sum(w_ for _, w_ in weights)
     heights = {name: int(left_widget_h * (w_ / total_weight)) for name, w_ in weights}
