@@ -19,7 +19,7 @@ substitutions:
   device_name: doordash
   friendly_name: "Door Dashboard"
   # Bump on every meaningful firmware change. Rendered top-right on the panel.
-  firmware_version: "0.3.12"
+  firmware_version: "0.3.13"
   # First-boot target: this laptop running the addon locally.
   # Switch to homeassistant.local:8099 once deployed as an HA add-on.
   dashboard_host: "homeassistant.local:8099"
@@ -199,11 +199,11 @@ script:
   # (near the resonance peak of typical small piezos). 50% duty produces
   # a clean square-wave tone; 0% silences it.
   #
-  # Currently triggered only on wake-from-deep-sleep (any button), NOT
-  # on every button press while awake — the constant beeping during
-  # browsing was found to be annoying. To re-enable for awake presses,
-  # add `script.execute: chirp` back into the binary_sensor on_press
-  # handlers below.
+  # Triggered on EVERY button press — both awake (via the binary_sensor
+  # on_press handlers below) and on wake-from-deep-sleep (via the
+  # late-boot on_boot trigger above). 40 ms is short enough to feel like
+  # a click rather than a beep — the previous ~2 s tone was the annoying
+  # one. To go silent, set this script body to a no-op.
   - id: chirp
     mode: restart
     then:
