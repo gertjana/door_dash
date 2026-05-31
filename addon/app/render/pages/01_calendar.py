@@ -280,13 +280,14 @@ def render(
                 by2 = by + EVENT_BAR_HEIGHT
                 title = ev.summary or "(no title)"
                 if ev.all_day:
-                    # Filled black bar, white text.
+                    # Filled black bar, white text — keeps all-day events
+                    # visually distinct from timed ones without using a
+                    # border (per user preference: no event borders).
                     draw.rectangle([bar_area_left, by, bx2, by2], fill=0)
                     text_fill = 255
                     text_x = bar_area_left + 3
                 else:
-                    # Outlined bar, black text; show start time prefix.
-                    draw.rectangle([bar_area_left, by, bx2, by2], outline=0, width=GRID_LINE)
+                    # Plain text on the cell background — no outline.
                     text_fill = 0
                     text_x = bar_area_left + 3
                     local_start = ev.start.astimezone(tz)
