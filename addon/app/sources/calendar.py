@@ -69,19 +69,74 @@ _FALLBACK_EVENTS = None
 
 def _fallback(settings: Settings) -> list[Event]:
     now = datetime.now(UTC)
+    # Match HA's calendar API conventions so the fallback exercises the
+    # same code paths real data does:
+    #   * all-day events use an EXCLUSIVE end at midnight of the day after
+    #     the last all-day day (a one-day "Holiday" on May 3 has
+    #     start=2026-05-03 00:00, end=2026-05-04 00:00).
+    #   * timed events have an explicit end ~1h after start.
+    today_midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
     samples = [
-        (now + timedelta(hours=3), "Dentist appointment", False, "Tandartspraktijk Centrum"),
-        (now + timedelta(days=1, hours=2), "Work: Team standup", False, "Online"),
-        (now + timedelta(days=1, hours=11), "Dinner with Anna", False, "Restaurant De Kas"),
-        (now + timedelta(days=2, hours=1), "Family: School run", False, None),
-        (now + timedelta(days=2, hours=7), "Work: 1:1 with manager", False, "Office, Room 3.14"),
-        (now + timedelta(days=3), "Holiday", True, None),
-        (now + timedelta(days=4, hours=3), "Health: Doctor", False, "Huisartsenpraktijk"),
-        (now + timedelta(days=5, hours=5), "Lunch in town", False, "Café Brecht"),
+        (
+            now + timedelta(hours=3),
+            now + timedelta(hours=4),
+            "Dentist appointment",
+            False,
+            "Tandartspraktijk Centrum",
+        ),
+        (
+            now + timedelta(days=1, hours=2),
+            now + timedelta(days=1, hours=3),
+            "Work: Team standup",
+            False,
+            "Online",
+        ),
+        (
+            now + timedelta(days=1, hours=11),
+            now + timedelta(days=1, hours=13),
+            "Dinner with Anna",
+            False,
+            "Restaurant De Kas",
+        ),
+        (
+            now + timedelta(days=2, hours=1),
+            now + timedelta(days=2, hours=2),
+            "Family: School run",
+            False,
+            None,
+        ),
+        (
+            now + timedelta(days=2, hours=7),
+            now + timedelta(days=2, hours=8),
+            "Work: 1:1 with manager",
+            False,
+            "Office, Room 3.14",
+        ),
+        # All-day "Holiday" on (today+3). End is EXCLUSIVE — midnight of (today+4).
+        (
+            today_midnight + timedelta(days=3),
+            today_midnight + timedelta(days=4),
+            "Holiday",
+            True,
+            None,
+        ),
+        (
+            now + timedelta(days=4, hours=3),
+            now + timedelta(days=4, hours=4),
+            "Health: Doctor",
+            False,
+            "Huisartsenpraktijk",
+        ),
+        (
+            now + timedelta(days=5, hours=5),
+            now + timedelta(days=5, hours=6),
+            "Lunch in town",
+            False,
+            "Café Brecht",
+        ),
     ]
     return [
-        Event(start=s, end=s + timedelta(hours=1), summary=t, all_day=ad, location=loc)
-        for (s, t, ad, loc) in samples
+        Event(start=s, end=e, summary=t, all_day=ad, location=loc) for (s, e, t, ad, loc) in samples
     ][: settings.max_events]
 
 

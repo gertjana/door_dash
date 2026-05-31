@@ -78,17 +78,37 @@ def _month_grid_days(year: int, month: int) -> list[list[datetime]]:
 
 
 def _events_for_day(events: list[Event], day: datetime, tz: ZoneInfo) -> list[Event]:
-    """Filter events whose local-time interval intersects `day` (00:00-24:00 local)."""
+    """Filter events whose interval intersects `day` (00:00–24:00 local).
+
+    All-day events from HA's calendar API carry a *date* (no time, no
+    timezone) — e.g. ``{"date": "2026-06-03"}`` for a one-day "Holiday"
+    on June 3, with ``end`` set to the EXCLUSIVE next-day date
+    ``2026-06-04``. Our parser stamps tz-naïve dates as UTC, which then
+    shifts the event by the local UTC offset (e.g. into June 4 02:00
+    CEST), making the event spuriously spill onto the next calendar day.
+
+    To get correct day-bucketing for all-day events we therefore compare
+    on **date** only (ignoring tz) and treat HA's exclusive end-date as
+    "last day = end - 1 day". Timed events keep the full timezone-aware
+    interval comparison.
+    """
     day_start_local = datetime.combine(day.date(), time.min, tzinfo=tz)
     day_end_local = day_start_local + timedelta(days=1)
+    target = day.date()
     out: list[Event] = []
     for ev in events:
-        ev_start = ev.start.astimezone(tz)
-        # All-day events from HA come with end = next day midnight; treat
-        # missing end as a point event.
-        ev_end = (ev.end or ev.start).astimezone(tz)
-        if ev_end > day_start_local and ev_start < day_end_local:
-            out.append(ev)
+        if ev.all_day:
+            # HA gives `start` = first day, `end` = exclusive day-after-last.
+            start_date = ev.start.date()
+            # Exclusive end → last covered day is end - 1. No end → point event.
+            last_date = (ev.end - timedelta(days=1)).date() if ev.end is not None else start_date
+            if start_date <= target <= last_date:
+                out.append(ev)
+        else:
+            ev_start = ev.start.astimezone(tz)
+            ev_end = (ev.end or ev.start).astimezone(tz)
+            if ev_end >= day_start_local and ev_start < day_end_local:
+                out.append(ev)
     # Within a day, sort all-day first then by start time.
     out.sort(key=lambda e: (not e.all_day, e.start))
     return out
