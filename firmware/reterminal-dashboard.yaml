@@ -19,7 +19,7 @@ substitutions:
   device_name: doordash
   friendly_name: "Door Dashboard"
   # Bump on every meaningful firmware change. Rendered top-right on the panel.
-  firmware_version: "0.3.11"
+  firmware_version: "0.3.12"
   # First-boot target: this laptop running the addon locally.
   # Switch to homeassistant.local:8099 once deployed as an HA add-on.
   dashboard_host: "homeassistant.local:8099"
@@ -76,6 +76,10 @@ esphome:
     #   GPIO5 (left)  → previous page
     # current_page is restored from NVS so prev/next operate on the
     # page that was showing when the device went to sleep.
+    #
+    # We also chirp the buzzer here on any button wake, so the user
+    # gets immediate audible feedback that the press registered —
+    # useful because the display takes several seconds to refresh.
     - priority: -100
       then:
         - lambda: |-
@@ -103,6 +107,18 @@ esphome:
               id(current_page) = (id(current_page) - 1 + n) % n;
               ESP_LOGW("boot", "wake=left → page %d", id(current_page));
             }
+        # Chirp on any wake-from-button (the lambda above only runs in
+        # production mode; ESP_SLEEP_WAKEUP_EXT1 is the only ext1 cause
+        # so re-checking it here keeps the chirp scoped to button wakes
+        # and not timer wakes).
+        - if:
+            condition:
+              lambda: |-
+                const char* dm = "${dev_mode}";
+                return dm[0] != '1' &&
+                       esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1;
+            then:
+              - script.execute: chirp
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -183,21 +199,21 @@ script:
   # (near the resonance peak of typical small piezos). 50% duty produces
   # a clean square-wave tone; 0% silences it.
   #
-  # CURRENTLY DISABLED — the chirp was too long/annoying during testing.
-  # Kept as a no-op so all `script.execute: chirp` callers continue to
-  # work; re-enable by uncommenting the two output.set_level + delay
-  # actions below (and tweak duration if needed).
+  # Currently triggered only on wake-from-deep-sleep (any button), NOT
+  # on every button press while awake — the constant beeping during
+  # browsing was found to be annoying. To re-enable for awake presses,
+  # add `script.execute: chirp` back into the binary_sensor on_press
+  # handlers below.
   - id: chirp
     mode: restart
     then:
-      - lambda: 'return;'  # no-op while buzzer is disabled
-      # - output.set_level:
-      #     id: buzzer
-      #     level: 0.5
-      # - delay: 60ms
-      # - output.set_level:
-      #     id: buzzer
-      #     level: 0.0
+      - output.set_level:
+          id: buzzer
+          level: 0.5
+      - delay: 40ms
+      - output.set_level:
+          id: buzzer
+          level: 0.0
 
   - id: refresh_dashboard
     # `restart` (rather than `single`): if a refresh is already in flight
