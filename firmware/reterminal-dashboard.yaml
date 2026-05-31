@@ -19,7 +19,7 @@ substitutions:
   device_name: doordash
   friendly_name: "Door Dashboard"
   # Bump on every meaningful firmware change. Rendered top-right on the panel.
-  firmware_version: "0.3.0"
+  firmware_version: "0.3.11"
   # First-boot target: this laptop running the addon locally.
   # Switch to homeassistant.local:8099 once deployed as an HA add-on.
   dashboard_host: "homeassistant.local:8099"
@@ -38,31 +38,71 @@ esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
   project:
-    name: anomalyco.reterminal_dashboard
+    name: gertjana.reterminal_dashboard
     version: ${firmware_version}
   on_boot:
-    # Early hardware init: enable battery sense rail before anything else.
+    # Earliest hardware init: LED on so we can see the device is awake
+    # the instant power/wake hits, before any other component starts.
+    - priority: 700
+      then:
+        - output.turn_on: status_led
+    # Early hardware init: enable battery sense rail before anything else,
+    # and (in dev mode) prevent deep sleep BEFORE Wi-Fi/refresh/sleep can
+    # race us. Doing this at priority -100 is too late: on_connect kicks
+    # off refresh_dashboard, which sleeps from on_download_finished, all
+    # before the late-boot lambda gets a chance to run.
     - priority: 600
       then:
         - output.turn_on: bsp_battery_enable
-    # Late boot: now that all components (incl. deep_sleep) are constructed,
-    # decide whether to stay awake for OTA / debugging.
+        - lambda: |-
+            // Substitutions are textual: "${dev_mode}" becomes literally
+            // "1" or "0" in the source. Use a runtime string compare so we
+            // don't depend on the C preprocessor parsing it correctly.
+            const char* dm = "${dev_mode}";
+            ESP_LOGW("boot", "dev_mode substitution = '%s'", dm);
+            if (dm[0] == '1') {
+              ESP_LOGW("boot", "DEV MODE — deep sleep disabled, staying awake");
+              id(deep_sleeper).prevent_deep_sleep();
+            }
+    # Late boot: now that all components are constructed, handle the
+    # wake-from-sleep case (production-mode only). In dev mode this is a
+    # no-op because we already called prevent_deep_sleep() above.
+    #
+    # ext1 wake on any of GPIO3/4/5: figure out which button(s) caused
+    # the wake and adjust current_page BEFORE on_connect's refresh
+    # builds the URL. Bitmask from esp_sleep_get_ext1_wakeup_status().
+    #   GPIO3 (green) → page 0 (home)
+    #   GPIO4 (right) → next page
+    #   GPIO5 (left)  → previous page
+    # current_page is restored from NVS so prev/next operate on the
+    # page that was showing when the device went to sleep.
     - priority: -100
       then:
         - lambda: |-
-            #if ${dev_mode}
-              ESP_LOGW("boot", "DEV MODE — deep sleep disabled, refreshing on interval");
-              id(deep_sleeper).prevent_deep_sleep();
-            #else
-              esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-              if (cause == ESP_SLEEP_WAKEUP_EXT0 || cause == ESP_SLEEP_WAKEUP_EXT1 ||
-                  cause == ESP_SLEEP_WAKEUP_GPIO) {
-                ESP_LOGW("boot", "Woken by button — OTA safe mode, deep sleep disabled");
-                id(deep_sleeper).prevent_deep_sleep();
-              } else {
-                ESP_LOGI("boot", "Normal wake (cause=%d) — refresh cycle", (int) cause);
-              }
-            #endif
+            const char* dm = "${dev_mode}";
+            if (dm[0] == '1') return;
+            esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+            if (cause != ESP_SLEEP_WAKEUP_EXT1) {
+              ESP_LOGI("boot", "Normal wake (cause=%d) — refresh cycle", (int) cause);
+              return;
+            }
+            uint64_t mask = esp_sleep_get_ext1_wakeup_status();
+            ESP_LOGW("boot", "ext1 wake, pin mask=0x%llx, last page=%d",
+                     (unsigned long long) mask, id(current_page));
+            int n = id(page_count);
+            if (n < 1) n = 1;
+            // Green takes precedence if multiple pins read low simultaneously
+            // (e.g. user holding green while another bounces).
+            if (mask & (1ULL << 3)) {
+              id(current_page) = 0;
+              ESP_LOGW("boot", "wake=green → page 0");
+            } else if (mask & (1ULL << 4)) {
+              id(current_page) = (id(current_page) + 1) % n;
+              ESP_LOGW("boot", "wake=right → page %d", id(current_page));
+            } else if (mask & (1ULL << 5)) {
+              id(current_page) = (id(current_page) - 1 + n) % n;
+              ESP_LOGW("boot", "wake=left → page %d", id(current_page));
+            }
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -104,29 +144,126 @@ wifi:
       - component.update: battery_voltage
       - delay: 1500ms
       - component.update: battery_pct
-      - script.execute: refresh_dashboard
+      # Learn page count from the server before we start any refresh, so
+      # the button handlers know how far they're allowed to wrap.
+      - script.execute: fetch_page_count
+      - script.execute:
+          id: refresh_dashboard
+          nocache: false
 
 captive_portal:
+
+# Page navigation state.
+#
+# `current_page` is the dashboard page the device should request next
+# (?page=N). With `restore_value: true` it survives deep sleep via NVS,
+# so a wake from a white button can advance/retreat from the last-shown
+# page and a wake from green resets to 0 (handled in the late-boot
+# lambda based on which ext1 pin caused the wake).
+#
+# `page_count` is the number of pages the server currently serves. We
+# learn it on boot by GETting /pages, with a sensible default so we
+# don't get stuck if the server is unreachable. No need to persist —
+# we refresh it every boot.
+globals:
+  - id: current_page
+    type: int
+    restore_value: true
+    initial_value: '0'
+  - id: page_count
+    type: int
+    restore_value: false
+    initial_value: '3'
 
 # Refresh script: build the URL from current sensor values, then fetch.
 # Called on Wi-Fi connect and (in dev mode) on a periodic interval.
 script:
+  # Short audible "button received" beep.
+  # GPIO45 drives a passive piezo via an LEDC PWM output at 2.7 kHz
+  # (near the resonance peak of typical small piezos). 50% duty produces
+  # a clean square-wave tone; 0% silences it.
+  #
+  # CURRENTLY DISABLED — the chirp was too long/annoying during testing.
+  # Kept as a no-op so all `script.execute: chirp` callers continue to
+  # work; re-enable by uncommenting the two output.set_level + delay
+  # actions below (and tweak duration if needed).
+  - id: chirp
+    mode: restart
+    then:
+      - lambda: 'return;'  # no-op while buzzer is disabled
+      # - output.set_level:
+      #     id: buzzer
+      #     level: 0.5
+      # - delay: 60ms
+      # - output.set_level:
+      #     id: buzzer
+      #     level: 0.0
+
   - id: refresh_dashboard
-    mode: single
+    # `restart` (rather than `single`): if a refresh is already in flight
+    # — e.g. the on-connect boot refresh hasn't finished when the user
+    # mashes a button — the new invocation cancels the old one and wins.
+    # `single` (the previous value) silently dropped the button press,
+    # causing the well-known "first press after reboot does nothing"
+    # symptom.
+    mode: restart
+    # `nocache=true` tells the server to skip its image cache. We use it
+    # for the green-button "force fresh" action; routine refreshes go
+    # without it so the cache can serve identical wakes cheaply.
+    parameters:
+      nocache: bool
     then:
       - logger.log: "Building dashboard URL with sensor values"
       - lambda: |-
-          char buf[256];
+          char buf[320];
           float t = id(indoor_temp).state;
           float h = id(indoor_hum).state;
           float b = id(battery_pct).state;
-          int n = snprintf(buf, sizeof(buf), "http://${dashboard_host}/dashboard.bmp?fw=${firmware_version}&");
+          int p = id(current_page);
+          int n = snprintf(buf, sizeof(buf),
+                           "http://${dashboard_host}/dashboard.bmp?fw=${firmware_version}&page=%d&", p);
+          if (nocache)  n += snprintf(buf + n, sizeof(buf) - n, "nocache=1&");
           if (!isnan(t)) n += snprintf(buf + n, sizeof(buf) - n, "indoor_temp=%.1f&", t);
           if (!isnan(h)) n += snprintf(buf + n, sizeof(buf) - n, "indoor_hum=%.1f&", h);
           if (!isnan(b)) n += snprintf(buf + n, sizeof(buf) - n, "battery_pct=%.0f&", b);
           ESP_LOGI("dashboard", "URL: %s", buf);
           id(dashboard_img).set_url(std::string(buf));
       - component.update: dashboard_img
+
+  # Learn the number of dashboard pages from the server's /pages endpoint.
+  # Called once on Wi-Fi connect; if it fails we keep the initial_value
+  # default (3) and carry on.
+  - id: fetch_page_count
+    mode: single
+    then:
+      - http_request.get:
+          url: "http://${dashboard_host}/pages"
+          capture_response: true
+          on_response:
+            then:
+              - lambda: |-
+                  // Tiny ad-hoc JSON parse: look for `"count":N` in the body.
+                  // Avoids dragging in a full JSON dep just for one integer.
+                  std::string s(body);
+                  auto pos = s.find("\"count\"");
+                  if (pos == std::string::npos) {
+                    ESP_LOGW("pages", "no 'count' key in /pages response");
+                    return;
+                  }
+                  pos = s.find(':', pos);
+                  if (pos == std::string::npos) return;
+                  int n = atoi(s.c_str() + pos + 1);
+                  if (n > 0 && n < 64) {
+                    id(page_count) = n;
+                    ESP_LOGI("pages", "page_count = %d", n);
+                  } else {
+                    ESP_LOGW("pages", "implausible count=%d, ignoring", n);
+                  }
+          on_error:
+            then:
+              - logger.log:
+                  level: WARN
+                  format: "fetch_page_count: HTTP error, keeping default"
 
 # Dev-mode periodic refresh. In normal (deep-sleep) operation this fires
 # once per wake cycle and is harmless; in dev mode it's how we keep the
@@ -139,16 +276,56 @@ interval:
       - component.update: battery_voltage
       - delay: 1500ms
       - component.update: battery_pct
-      - script.execute: refresh_dashboard
+      - script.execute:
+          id: refresh_dashboard
+          nocache: false
 
 # Deep sleep loop: wake -> fetch image -> render -> sleep.
-# Right white button (GPIO4) wakes from sleep for OTA / debugging.
+#
+# Wake sources: any of the 3 buttons (GPIO3/4/5) via ext1, plus the
+# periodic timer. ext1 with mode ANY_LOW wakes when any pin in the
+# mask reads LOW — buttons are active-low (pulled-up, short to GND
+# when pressed). The late-boot lambda above reads the wake bitmask
+# and adjusts current_page accordingly:
+#   GPIO3 (green) → home (page 0)
+#   GPIO4 (right) → next page
+#   GPIO5 (left)  → previous page
+#
+# All three pins are also claimed by their `binary_sensor:` entries
+# below, so both schemas need `allow_other_uses: true`. As a side-effect
+# the binary_sensors switch from interrupt to polling mode (fine for
+# human button presses).
+#
+# NOTE on RTC pull-ups: ESP-IDF's ext1 driver by default keeps internal
+# pull resistors active during deep sleep when the
+# ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS Kconfig is set (default on
+# Arduino-ESP32). If wake turns out to be flaky we may need to call
+# rtc_gpio_pullup_en() / rtc_gpio_hold_en() manually before sleep.
 deep_sleep:
   id: deep_sleeper
   run_duration: 45s
   sleep_duration: ${refresh_interval}
-  wakeup_pin: GPIO4
-  wakeup_pin_mode: INVERT_WAKEUP
+  esp32_ext1_wakeup:
+    pins:
+      - number: GPIO3
+        allow_other_uses: true
+        mode:
+          input: true
+          pullup: true
+        inverted: true
+      - number: GPIO4
+        allow_other_uses: true
+        mode:
+          input: true
+          pullup: true
+        inverted: true
+      - number: GPIO5
+        allow_other_uses: true
+        mode:
+          input: true
+          pullup: true
+        inverted: true
+    mode: ANY_LOW
 
 http_request:
   verify_ssl: false
@@ -169,12 +346,29 @@ online_image:
         - logger.log: "Image downloaded — refreshing display"
         - component.update: epaper
         - delay: 3s
-        - deep_sleep.enter: deep_sleeper
+        # In dev mode (${dev_mode} == "1") stay awake so we can test
+        # buttons / OTA. Otherwise: turn LED off and sleep.
+        - lambda: |-
+            const char* dm = "${dev_mode}";
+            ESP_LOGW("sleep", "on_download_finished dev_mode='%s'", dm);
+            if (dm[0] != '1') {
+              id(status_led).turn_off();
+              id(deep_sleeper).begin_sleep(true);
+            } else {
+              ESP_LOGW("sleep", "DEV MODE — skipping deep sleep");
+            }
     on_error:
       then:
         - logger.log: "Image download failed — sleeping anyway"
         - delay: 1s
-        - deep_sleep.enter: deep_sleeper
+        - lambda: |-
+            const char* dm = "${dev_mode}";
+            if (dm[0] != '1') {
+              id(status_led).turn_off();
+              id(deep_sleeper).begin_sleep(true);
+            } else {
+              ESP_LOGW("sleep", "DEV MODE — skipping deep sleep (after error)");
+            }
 
 # === SPI bus for the ePaper (verified pins) ===
 spi:
@@ -216,6 +410,105 @@ output:
   - platform: gpio
     pin: GPIO21
     id: bsp_battery_enable
+
+  # Onboard status LED (GPIO6). Solid on = device awake; off = sleeping.
+  # If the LED is actually active-low on this board, add `inverted: true`.
+  - platform: gpio
+    pin: GPIO6
+    id: status_led
+
+  # Onboard buzzer (GPIO45). Passive piezo — must be driven with a PWM
+  # tone, not a static GPIO level, otherwise it makes no sound and (on
+  # some boards) the plain-gpio init can fault at boot.
+  - platform: ledc
+    pin: GPIO45
+    id: buzzer
+    frequency: 2700Hz
+
+# === Buttons ===
+# Diagnostic stage: just log presses and chirp on each one so we can confirm
+# the wiring matches Seeed's documented pin map before binding real actions.
+# Assumes the buttons short the GPIO to GND when pressed (the common pattern
+# on this board); if the log shows a press as soon as the device boots, flip
+# `inverted:` to false for that button.
+binary_sensor:
+  - platform: gpio
+    id: button_green
+    name: "Button Green"
+    pin:
+      number: GPIO3
+      # Shared with deep_sleep.esp32_ext1_wakeup pin list — both sides
+      # need this flag or ESPHome aborts with "pin used in multiple places".
+      allow_other_uses: true
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    on_press:
+      then:
+        - logger.log:
+            level: WARN
+            format: "BUTTON: green (GPIO3) → home + force refresh"
+        - script.execute: chirp
+        - lambda: |-
+            id(current_page) = 0;
+        - script.execute:
+            id: refresh_dashboard
+            nocache: true
+
+  - platform: gpio
+    id: button_right
+    name: "Button Right White"
+    pin:
+      number: GPIO4
+      # Shared with deep_sleep.esp32_ext1_wakeup pin list — both sides
+      # need this flag or ESPHome aborts with "pin used in multiple places".
+      allow_other_uses: true
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    on_press:
+      then:
+        - logger.log:
+            level: WARN
+            format: "BUTTON: right white (GPIO4) → next page"
+        - script.execute: chirp
+        - lambda: |-
+            int n = id(page_count);
+            if (n < 1) n = 1;
+            id(current_page) = (id(current_page) + 1) % n;
+            ESP_LOGW("page", "current_page = %d / %d", id(current_page), n);
+        - script.execute:
+            id: refresh_dashboard
+            nocache: false
+
+  - platform: gpio
+    id: button_left
+    name: "Button Left White"
+    pin:
+      number: GPIO5
+      # Shared with deep_sleep.esp32_ext1_wakeup pin list — both sides
+      # need this flag or ESPHome aborts with "pin used in multiple places".
+      allow_other_uses: true
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    on_press:
+      then:
+        - logger.log:
+            level: WARN
+            format: "BUTTON: left white (GPIO5) → previous page"
+        - script.execute: chirp
+        - lambda: |-
+            int n = id(page_count);
+            if (n < 1) n = 1;
+            id(current_page) = (id(current_page) - 1 + n) % n;
+            ESP_LOGW("page", "current_page = %d / %d", id(current_page), n);
+        - script.execute:
+            id: refresh_dashboard
+            nocache: false
 
 # === Sensors ===
 sensor:

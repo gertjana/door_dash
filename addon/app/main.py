@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse
 from . import __version__ as ADDON_VERSION  # noqa: N812
 from .config import Settings, get_settings
 from .render.image_io import to_bmp_bytes, to_png_bytes
-from .render.layout import compose
+from .render.pages import PAGES, get_page
 from .sources.local_sensors import LocalSensors
 
 logging.basicConfig(
@@ -35,18 +35,24 @@ def _bucket(settings: Settings) -> int:
 
 
 def _lookup_or_render(
-    settings: Settings, sensors: LocalSensors, fw_version: str | None
+    settings: Settings,
+    sensors: LocalSensors,
+    fw_version: str | None,
+    page_key: str | int | None,
+    nocache: bool = False,
 ) -> tuple[dict, bool]:
-    key = (sensors.cache_key(), _bucket(settings), fw_version or "")
-    with _cache_lock:
-        entry = _cache.get(key)
-        if entry is not None:
-            # Move to most-recent position
-            _cache.move_to_end(key)
-            return entry, True
+    page = get_page(page_key)
+    key = (sensors.cache_key(), _bucket(settings), fw_version or "", page.name)
+    if not nocache:
+        with _cache_lock:
+            entry = _cache.get(key)
+            if entry is not None:
+                # Move to most-recent position
+                _cache.move_to_end(key)
+                return entry, True
 
     # Render outside the lock (Pillow + HTTP calls)
-    img = compose(settings, sensors, fw_version=fw_version)
+    img = page.render(settings, sensors, fw_version=fw_version)
     entry = {
         "ts": time.time(),
         "bmp": to_bmp_bytes(img),
@@ -83,10 +89,18 @@ def dashboard_bmp(
     indoor_hum: float | None = Query(default=None),
     battery_pct: float | None = Query(default=None),
     fw: str | None = Query(default=None),
+    page: str | None = Query(
+        default=None,
+        description="Page index (0,1,…) or canonical name (e.g. 'dashboard').",
+    ),
+    nocache: int = Query(
+        default=0,
+        description="If 1, bypass the image cache and force a fresh render.",
+    ),
 ) -> Response:
     settings = get_settings()
     sensors = _build_sensors(indoor_temp, indoor_hum, battery_pct)
-    entry, hit = _lookup_or_render(settings, sensors, fw)
+    entry, hit = _lookup_or_render(settings, sensors, fw, page, nocache=bool(nocache))
     return Response(
         content=entry["bmp"],
         media_type="image/bmp",
@@ -100,15 +114,32 @@ def dashboard_png(
     indoor_hum: float | None = Query(default=None),
     battery_pct: float | None = Query(default=None),
     fw: str | None = Query(default=None),
+    page: str | None = Query(
+        default=None,
+        description="Page index (0,1,…) or canonical name (e.g. 'dashboard').",
+    ),
+    nocache: int = Query(
+        default=0,
+        description="If 1, bypass the image cache and force a fresh render.",
+    ),
 ) -> Response:
     settings = get_settings()
     sensors = _build_sensors(indoor_temp, indoor_hum, battery_pct)
-    entry, hit = _lookup_or_render(settings, sensors, fw)
+    entry, hit = _lookup_or_render(settings, sensors, fw, page, nocache=bool(nocache))
     return Response(
         content=entry["png"],
         media_type="image/png",
         headers={"X-Cache": "hit" if hit else "miss"},
     )
+
+
+@app.get("/pages")
+def list_pages() -> dict:
+    """List registered pages so the firmware can discover the page count."""
+    return {
+        "count": len(PAGES),
+        "pages": [{"index": p.index, "name": p.name, "title": p.title} for p in PAGES],
+    }
 
 
 @app.post("/refresh")
@@ -178,17 +209,29 @@ def index() -> str:
       form { display:inline; margin-right:12px; }
       input { width:60px; }
       label { margin-right:4px; }
+      button { cursor:pointer; }
+      .nav { display:inline-flex; align-items:center; gap:8px; }
+      .nav button { font-size:18px; padding:2px 12px; }
+      .pageinfo { font-variant-numeric: tabular-nums; opacity:.85; min-width:14em; display:inline-block; }
+      kbd { background:#444; padding:1px 6px; border-radius:3px; font-size:11px; }
     </style></head>
     <body>
       <div class="bar">
         <strong>reTerminal E1001 dashboard preview</strong> —
         <a href="dashboard.png">dashboard.png</a> ·
         <a href="dashboard.bmp">dashboard.bmp</a> ·
+        <a href="pages">pages</a> ·
         <a href="javascript:fetch('refresh',{method:'POST'}).then(()=>location.reload())">force refresh</a>
+      </div>
+      <div class="bar nav">
+        <button id="prev" title="Previous page (\u2190)">\u25c0</button>
+        <span class="pageinfo" id="pageinfo">page \u2026</span>
+        <button id="next" title="Next page (\u2192)">\u25b6</button>
+        <span style="margin-left:16px;opacity:.6">arrow keys also work</span>
       </div>
       <div class="bar">
         <form onsubmit="event.preventDefault(); reload();">
-          <label>Temp °C</label><input id="t" type="number" step="0.1" value="21.3">
+          <label>Temp \u00b0C</label><input id="t" type="number" step="0.1" value="21.3">
           <label>Hum %</label><input id="h" type="number" step="1" value="48">
           <label>Bat %</label><input id="b" type="number" step="1" value="87">
           <label>fw</label><input id="fw" type="text" style="width:80px" value="0.3.0">
@@ -198,6 +241,34 @@ def index() -> str:
       </div>
       <img id="img" src="dashboard.png">
       <script>
+        let pages = [];
+        let idx = 0;
+
+        async function loadPages() {
+          try {
+            const r = await fetch('pages');
+            const j = await r.json();
+            pages = j.pages || [];
+          } catch (e) {
+            pages = [{index:0, name:'dashboard', title:'Dashboard'}];
+          }
+          updateInfo();
+          reload();
+        }
+
+        function updateInfo() {
+          const p = pages[idx] || {title:'(none)', name:'?'};
+          const info = document.getElementById('pageinfo');
+          info.textContent = `page ${idx + 1}/${pages.length} \u2014 ${p.title}`;
+        }
+
+        function step(delta) {
+          if (!pages.length) return;
+          idx = (idx + delta + pages.length) % pages.length;
+          updateInfo();
+          reload();
+        }
+
         function reload() {
           const t = document.getElementById('t').value;
           const h = document.getElementById('h').value;
@@ -208,10 +279,21 @@ def index() -> str:
           if (h !== '') qs.set('indoor_hum', h);
           if (b !== '') qs.set('battery_pct', b);
           if (fw !== '') qs.set('fw', fw);
+          if (pages[idx]) qs.set('page', pages[idx].name);
           qs.set('_', Date.now());
           document.getElementById('img').src = 'dashboard.png?' + qs.toString();
         }
-        reload();
+
+        document.getElementById('prev').addEventListener('click', () => step(-1));
+        document.getElementById('next').addEventListener('click', () => step(+1));
+        document.addEventListener('keydown', (e) => {
+          // Ignore arrow keys when typing in an input.
+          if (e.target.tagName === 'INPUT') return;
+          if (e.key === 'ArrowLeft') step(-1);
+          else if (e.key === 'ArrowRight') step(+1);
+        });
+
+        loadPages();
       </script>
     </body></html>
     """
