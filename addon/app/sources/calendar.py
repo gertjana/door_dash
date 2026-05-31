@@ -108,3 +108,32 @@ def fetch(settings: Settings) -> list[Event]:
 
     events.sort(key=lambda e: e.start)
     return events[: settings.max_events]
+
+
+def fetch_range(settings: Settings, start: datetime, end: datetime) -> list[Event]:
+    """Fetch all events from all configured calendars within [start, end].
+
+    Unlike ``fetch()`` this does not cap at ``settings.max_events`` — the
+    caller (e.g. a full-month grid renderer) usually wants every event in
+    the window. Returns a fallback set only if there is no HA connection;
+    an empty real result from HA is returned as-is (an empty list).
+    """
+    ha = HAClient(settings)
+    if not ha.available:
+        # For a month view the existing _fallback (next-week-ish events)
+        # is fine for dev; clip to the requested window so we don't
+        # render events outside the displayed range.
+        fb = _fallback(settings)
+        return [e for e in fb if start <= e.start <= end]
+
+    start_iso = start.isoformat()
+    end_iso = end.isoformat()
+    events: list[Event] = []
+    for entity in settings.calendar_entities:
+        raw_events = ha.get_calendar(entity, start_iso, end_iso)
+        for raw in raw_events:
+            ev = _to_event(raw)
+            if ev:
+                events.append(ev)
+    events.sort(key=lambda e: e.start)
+    return events
