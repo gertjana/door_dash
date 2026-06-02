@@ -1,16 +1,17 @@
 """Indoors widget — onboard temp/humidity + battery state.
 
-Layout is a 2x2 grid:
+Layout:
 
     +-----------------+-----------------+
     |  Temp           |  Humidity       |
     +-----------------+-----------------+
-    |  Battery        |  (reserved)     |
+    |  [████████      ]  87%            |
     +-----------------+-----------------+
 
-The bottom-right quadrant is intentionally left empty for a future widget.
-All values are optional; missing readings render as an em-dash so cold boot
-still produces sensible output.
+Top row holds the two readings side-by-side; the bottom strip is a
+full-width battery bar with its percentage label to the right. All
+values are optional; missing readings render as an em-dash so cold
+boot still produces sensible output.
 """
 
 from __future__ import annotations
@@ -29,7 +30,12 @@ def _fmt(value, suffix: str, fmt: str = "{:.0f}") -> str:
 
 
 def _draw_battery_bar(draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, pct) -> None:
-    """Draw a battery-shaped bar with a small positive-terminal nub."""
+    """Draw a battery-shaped bar with a small positive-terminal nub.
+
+    ``w`` is the *total* width including the nub, so callers can size
+    the whole battery to a fixed region without separately accounting
+    for the terminal.
+    """
     nub_w = 4
     body_w = w - nub_w
     draw.rectangle((x, y, x + body_w, y + h), outline=0, width=2)
@@ -65,39 +71,47 @@ def render(sensors: LocalSensors, img: Image.Image, box: Box) -> None:
     title_f = font(20, bold=True)
     draw.text((box.x + 8, box.y + 4), "Indoors", font=title_f, fill=0)
 
-    # Quadrant geometry
+    # Geometry ----------------------------------------------------------
+    # The widget is split into two horizontal strips:
+    #   * top: temp + humidity side-by-side (the bulk of the height)
+    #   * bottom: battery bar spanning the widget width
+    # Side insets give the bar a little breathing room from the column
+    # divider on the right and the canvas edge on the left.
     content_top = box.y + 32
-    # Reserve a few pixels at the bottom so the battery % label doesn't kiss
-    # the horizontal divider line drawn between widgets.
-    bottom_pad = 8
-    content_bottom = box.y + box.h - bottom_pad
-    content_h = content_bottom - content_top
+    side_inset = 10
+    bottom_pad = 8  # gap above the next widget's separator line
+
+    # Battery row reserves a fixed strip at the bottom; everything above
+    # it is for the temp/hum readings.
+    battery_h = 16
+    battery_y = box.y + box.h - bottom_pad - battery_h
+    pct_label_w = 56  # room for "100%" in the bold label font
+
+    # Top row: temp + humidity, evenly split
     half_w = box.w // 2
-    half_h = content_h // 2
+    tl_x = box.x + side_inset
+    tr_x = box.x + half_w + side_inset - 6
+    top_y = content_top + 4
 
-    # Quadrant origins (with a small inset for breathing room)
-    inset_x = 10
-    inset_y = 4
-    tl_x = box.x + inset_x
-    tr_x = box.x + half_w + inset_x - 6
-    top_y = content_top + inset_y
-    bot_y = content_top + half_h + inset_y
-
-    # Top-left: temperature
     _draw_metric(draw, tl_x, top_y, "Temp", _fmt(sensors.indoor_temp, "°C", "{:.0f}"))
-
-    # Top-right: humidity
     _draw_metric(draw, tr_x, top_y, "Hum.", _fmt(sensors.indoor_hum, "%", "{:.0f}"))
 
-    # Bottom-left: battery bar (~80% of half-width) with % label beneath
-    bar_w = int((half_w - inset_x) * 0.80)
-    bar_h = 14
-    bar_x = tl_x
-    bar_y = bot_y + 4
-    _draw_battery_bar(draw, bar_x, bar_y, bar_w, bar_h, sensors.battery_pct)
+    # Bottom: full-width battery bar + percentage label to the right.
+    # Bar takes the available width minus the label column; label is
+    # right-aligned within its column so the % digits line up nicely
+    # regardless of whether the value is "9%" or "100%".
+    bar_x = box.x + side_inset
+    bar_right_limit = box.x + box.w - side_inset
+    bar_w = bar_right_limit - bar_x - pct_label_w - 6  # 6px gap before label
+    _draw_battery_bar(draw, bar_x, battery_y, bar_w, battery_h, sensors.battery_pct)
 
     pct_text = _fmt(sensors.battery_pct, "%", "{:.0f}")
     pct_f = font(14, bold=True)
-    draw.text((bar_x, bar_y + bar_h + 4), pct_text, font=pct_f, fill=0)
-
-    # Bottom-right: intentionally left empty (reserved for a future widget).
+    pct_bbox = draw.textbbox((0, 0), pct_text, font=pct_f)
+    pct_w = pct_bbox[2] - pct_bbox[0]
+    pct_h = pct_bbox[3] - pct_bbox[1]
+    # Right-align label within its reserved column; vertically centre
+    # against the bar.
+    pct_x = bar_right_limit - pct_w
+    pct_y = battery_y + (battery_h - pct_h) // 2 - 1
+    draw_crisp_text(draw, (pct_x, pct_y), pct_text, pct_f)

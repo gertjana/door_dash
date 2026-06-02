@@ -8,37 +8,24 @@ Renders Wi-Fi QR, weather, indoor sensors, and an upcoming calendar list.
 ```
 ┌──────────────────┐                       ┌─────────────────────────────┐
 │ reTerminal E1001 │ ── HTTP GET ────────▶ │ Home Assistant (Pi)         │
-│ ESPHome firmware │   /dashboard.bmp      │  └─ "EPaper Dashboard"      │
+│ ESPHome firmware │   /pages              │  └─ "EPaper Dashboard"      │
 │ deep_sleep 15m   │ ◀──────────────────── │     add-on (FastAPI+Pillow) │
-└──────────────────┘   1-bit BMP 960×640   └─────────────────────────────┘
+│                  │   {"count": N, …}     │                             │
+│                  │                       │                             │
+│                  │ ── HTTP GET ────────▶ │                             │
+│                  │   /dashboard.bmp?…    │                             │
+│                  │ ◀──────────────────── │                             │
+└──────────────────┘   1-bit BMP 800×480   └─────────────────────────────┘
 ```
+
+The firmware learns the current page count from `/pages` (so adding a page
+server-side automatically extends the carousel — no firmware reflash) and
+fetches the rendered image for the active page from `/dashboard.bmp?page=N`.
 
 * **`addon/`** — Home Assistant add-on. Python service that composes a 1-bit
   800×480 image from the configured widgets and serves it over HTTP.
 * **`firmware/`** — ESPHome YAML for the reTerminal E1001. Wakes every 15 min,
   fetches the image, draws it, deep-sleeps.
-
-## Layout (800×480 landscape)
-
-```
-┌─────────────────────┬─────────────────────────────────────────┐
-│  Wi-Fi              │  Weather                 v0.2.1 fw 0.3.0│
-│  [QR code]          │  [icon] 18°C   │  Tue   Wed   Thu       │
-│  SSID               │  Partlycloudy  │  ☼     ☁     ☼         │
-│                     │  Wind 12 km/h  │ 22/12 20/11 17/10      │
-│                     ├─────────────────────────────────────────┤
-├─────────────────────┤  Upcoming                               │
-│  Indoors            │  ─────────────────────────────────────  │
-│  Temp 21°C  Hum 48% │  Today      Dentist appointment         │
-│  ▰▰▰▰▰▰▱  87%       │  19:00      Tandartspraktijk Centrum    │
-├─────────────────────┤  Tomorrow  [Work] Team standup          │
-│  Car Batt - Range   │  18:00      Online                      │
-│  73% · 309 km       │  27 May     Dinner with Anna            │
-├─────────────────────┤  03:00      Restaurant De Kas           │
-│   Monday 25 May     │  …                                      │
-│   Refreshed 16:32   │                                         │
-└─────────────────────┴─────────────────────────────────────────┘
-```
 
 Indoor temperature/humidity and battery percentage are pushed by the firmware
 as query parameters (`?indoor_temp=…&indoor_hum=…&battery_pct=…`) on each
@@ -57,7 +44,7 @@ fine on the panel.
 
 A tiny `v{addon} · fw{firmware}` badge is rendered in the top-right corner of
 every image. The addon version is read at startup from `addon/config.yaml`'s
-`version:` field; the firmware version is sent by the device as a `?fw=`
+`version:` field; the firmware version is set in `firmware/reterminal-dashboard.yaml` sent by the device as a `?fw=`
 query parameter on every fetch. Bumping either side requires only:
 
 * **Addon**: edit `version:` in `addon/config.yaml`, redeploy
@@ -67,17 +54,10 @@ query parameter on every fetch. Bumping either side requires only:
 This gives you an at-a-glance way to confirm what's actually running on the
 panel after a deploy.
 
-## Firmware workflow
-
-The firmware lives in `firmware/reterminal-dashboard.yaml` and is built and
-flashed **from your own machine**, not from HA's ESPHome Device Builder add-on.
-Building the firmware from HA is very slow.
-
 ### Optionally "ESPHome" in HA
 
  **ESPHome integration** Settings → Devices & services
  Talks to a running ESPHome device over its Native API (port 6053) and exposes its sensors as HA entities.
-
 
 ### First flash / recovery (USB)
 
@@ -91,7 +71,7 @@ pip install esphome
 #    (wifi_ssid, wifi_password, api_encryption_key, ota_password).
 #    See firmware/secrets.yaml.example.
 
-# 3. Put device into download mode: hold BOOT → tap RESET → release BOOT
+# 3. Turn the device off and on asgain
 # 4. Flash
 esphome run firmware/reterminal-dashboard.yaml --device /dev/cu.usbserial-110
 ```
@@ -102,10 +82,8 @@ Once the device is running with `dev_mode: "0"`, it deep-sleeps between
 refreshes and is unreachable over the network most of the time. To push an
 OTA update:
 
-1. Press the **right white button** (GPIO4) — wakes the device and pins it
-   awake (the on-boot lambda detects button wake-cause and calls
-   `prevent_deep_sleep()`).
-2. From the Mac (no `--device` flag needed; mDNS discovers `doordash.local`):
+1. Press any of the buttons to wakes the device up
+2. From the Mac (no `--device` flag needed; mDNS discovers the device on the network)
    ```bash
    source ~/.esphome-venv/bin/activate
    esphome run firmware/reterminal-dashboard.yaml
@@ -127,7 +105,6 @@ pip install -r ../requirements.txt
 uvicorn main:app --reload --port 8099
 open http://localhost:8099/dashboard.png
 ```
-
 
 Set environment variables (or copy `.env.example` to `.env`) to point at a real
 Home Assistant for live weather/calendar data; otherwise the renderer falls back
