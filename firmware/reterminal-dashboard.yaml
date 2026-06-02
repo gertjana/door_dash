@@ -1,6 +1,6 @@
 # reTerminal E1001 ePaper dashboard firmware
 #
-# Pin assignments verified against Seeed's official ESPHome cookbook:
+#.  Used the following resources to understand the hardware and ESPHome support
 #   https://wiki.seeedstudio.com/reterminal_e10xx_with_esphome/
 #   https://wiki.seeedstudio.com/reterminal_e10xx_with_esphome_advanced/
 #
@@ -14,14 +14,12 @@
 #
 # Strategy: device wakes, reads onboard sensors, pushes them as URL params
 # to our HA add-on, fetches the rendered 1-bit BMP, displays, deep-sleeps.
+# Buttons wake the device and allow for browsing between multiple dashboard pages
 
 substitutions:
   device_name: doordash
   friendly_name: "Door Dashboard"
-  # Bump on every meaningful firmware change. Rendered top-right on the panel.
-  firmware_version: "0.3.13"
-  # First-boot target: this laptop running the addon locally.
-  # Switch to homeassistant.local:8099 once deployed as an HA add-on.
+  firmware_version: "0.2.0"
   dashboard_host: "homeassistant.local:8099"
   refresh_interval: "15min"
   # Development toggle: keep the device awake & refresh on a timer instead of
@@ -107,10 +105,12 @@ esphome:
               id(current_page) = (id(current_page) - 1 + n) % n;
               ESP_LOGW("boot", "wake=left → page %d", id(current_page));
             }
-        # Chirp on any wake-from-button (the lambda above only runs in
-        # production mode; ESP_SLEEP_WAKEUP_EXT1 is the only ext1 cause
-        # so re-checking it here keeps the chirp scoped to button wakes
-        # and not timer wakes).
+        # Wake chirp + lockout. We chirp once on the wake-causing press,
+        # then set button_locked = true so the binary_sensor on_press
+        # handler (which fires for the same physical press while the GPIO
+        # is still held) is suppressed and any rapid follow-up presses
+        # during this awake cycle are ignored. RAM is wiped at deep sleep
+        # so the lock naturally clears for the next wake.
         - if:
             condition:
               lambda: |-
@@ -119,6 +119,7 @@ esphome:
                        esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1;
             then:
               - script.execute: chirp
+              - lambda: 'id(button_locked) = true;'
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -188,8 +189,21 @@ globals:
     initial_value: '0'
   - id: page_count
     type: int
-    restore_value: false
+    # Persist across deep sleep / reboot in NVS. mDNS resolution of the
+    # dashboard host can take several seconds after wake, so the on-connect
+    # `fetch_page_count` often fails on cold boot; by persisting the last
+    # known-good value we avoid being stuck on the initial default after
+    # the addon grows or shrinks its page list.
+    restore_value: true
     initial_value: '3'
+  - id: button_locked
+    # Set to true on the first button press of an awake cycle. Subsequent
+    # presses are ignored until deep sleep clears RAM. Eliminates the
+    # buzzer-stuck-ON race that happens when a press lands during the
+    # pre-sleep silence window or while a chirp is mid-flight.
+    type: bool
+    restore_value: false
+    initial_value: 'false'
 
 # Refresh script: build the URL from current sensor values, then fetch.
 # Called on Wi-Fi connect and (in dev mode) on a periodic interval.
@@ -205,11 +219,20 @@ script:
   # a click rather than a beep — the previous ~2 s tone was the annoying
   # one. To go silent, set this script body to a no-op.
   - id: chirp
-    mode: restart
+    # `queued` rather than `restart`: each press should produce its own
+    # distinct click. With `restart`, a rapid second press cancels the
+    # first chirp's "turn-off" step mid-delay, freezing the buzzer ON.
+    # `queued` lets each invocation complete its on→delay→off cycle.
+    mode: queued
     then:
       - output.set_level:
           id: buzzer
-          level: 0.5
+          # Duty cycle controls perceived loudness on a passive piezo:
+          # 0.5 (50% — peak transitions) is the loudest possible drive,
+          # 0.1 (10%) is markedly quieter while keeping the click crisp.
+          # Drop to ~0.05 for whisper-quiet; lower than that loses the
+          # tonal character and starts to sound like clicks of static.
+          level: 0.1
       - delay: 40ms
       - output.set_level:
           id: buzzer
@@ -219,9 +242,7 @@ script:
     # `restart` (rather than `single`): if a refresh is already in flight
     # — e.g. the on-connect boot refresh hasn't finished when the user
     # mashes a button — the new invocation cancels the old one and wins.
-    # `single` (the previous value) silently dropped the button press,
-    # causing the well-known "first press after reboot does nothing"
-    # symptom.
+
     mode: restart
     # `nocache=true` tells the server to skip its image cache. We use it
     # for the green-button "force fresh" action; routine refreshes go
@@ -369,6 +390,26 @@ online_image:
             ESP_LOGW("sleep", "on_download_finished dev_mode='%s'", dm);
             if (dm[0] != '1') {
               id(status_led).turn_off();
+            }
+        # Drain any queued/in-flight chirp by giving it >40ms to complete,
+        # then explicitly silence the buzzer. If we sleep mid-chirp the
+        # LEDC peripheral state can get frozen at 50% duty → continuous
+        # tone until the supercap drains. Belt-and-braces:
+        #  1. wait 80ms (>2× chirp length) so any active chirp finishes.
+        #  2. force buzzer level to 0 (multiple times across delays so a
+        #     late-arriving chirp can't outrun us).
+        - delay: 80ms
+        - output.set_level: { id: buzzer, level: 0.0 }
+        - delay: 30ms
+        - output.set_level: { id: buzzer, level: 0.0 }
+        # Unlock buttons just before sleeping. In production mode this is
+        # cosmetic (RAM is about to be wiped anyway), but in dev mode the
+        # device stays awake — without this clear, button_locked would
+        # latch forever after the first press.
+        - lambda: 'id(button_locked) = false;'
+        - lambda: |-
+            const char* dm = "${dev_mode}";
+            if (dm[0] != '1') {
               id(deep_sleeper).begin_sleep(true);
             } else {
               ESP_LOGW("sleep", "DEV MODE — skipping deep sleep");
@@ -381,6 +422,15 @@ online_image:
             const char* dm = "${dev_mode}";
             if (dm[0] != '1') {
               id(status_led).turn_off();
+            }
+        - delay: 80ms
+        - output.set_level: { id: buzzer, level: 0.0 }
+        - delay: 30ms
+        - output.set_level: { id: buzzer, level: 0.0 }
+        - lambda: 'id(button_locked) = false;'
+        - lambda: |-
+            const char* dm = "${dev_mode}";
+            if (dm[0] != '1') {
               id(deep_sleeper).begin_sleep(true);
             } else {
               ESP_LOGW("sleep", "DEV MODE — skipping deep sleep (after error)");
@@ -462,15 +512,24 @@ binary_sensor:
       inverted: true
     on_press:
       then:
-        - logger.log:
-            level: WARN
-            format: "BUTTON: green (GPIO3) → home + force refresh"
-        - script.execute: chirp
-        - lambda: |-
-            id(current_page) = 0;
-        - script.execute:
-            id: refresh_dashboard
-            nocache: true
+        - if:
+            condition:
+              lambda: 'return id(button_locked);'
+            then:
+              - logger.log:
+                  level: WARN
+                  format: "BUTTON: green ignored (locked until sleep)"
+            else:
+              - lambda: 'id(button_locked) = true;'
+              - logger.log:
+                  level: WARN
+                  format: "BUTTON: green (GPIO3) → home + force refresh"
+              - script.execute: chirp
+              - lambda: |-
+                  id(current_page) = 0;
+              - script.execute:
+                  id: refresh_dashboard
+                  nocache: true
 
   - platform: gpio
     id: button_right
@@ -486,18 +545,31 @@ binary_sensor:
       inverted: true
     on_press:
       then:
-        - logger.log:
-            level: WARN
-            format: "BUTTON: right white (GPIO4) → next page"
-        - script.execute: chirp
-        - lambda: |-
-            int n = id(page_count);
-            if (n < 1) n = 1;
-            id(current_page) = (id(current_page) + 1) % n;
-            ESP_LOGW("page", "current_page = %d / %d", id(current_page), n);
-        - script.execute:
-            id: refresh_dashboard
-            nocache: false
+        - if:
+            condition:
+              lambda: 'return id(button_locked);'
+            then:
+              - logger.log:
+                  level: WARN
+                  format: "BUTTON: right ignored (locked until sleep)"
+            else:
+              - lambda: 'id(button_locked) = true;'
+              - logger.log:
+                  level: WARN
+                  format: "BUTTON: right white (GPIO4) → next page"
+              - script.execute: chirp
+              # Re-fetch page count first so we self-heal from any stale value
+              # (e.g. on-connect fetch raced with the first refresh, or the addon
+              # has grown/shrunk its page list since the device last connected).
+              - script.execute: fetch_page_count
+              - lambda: |-
+                  int n = id(page_count);
+                  if (n < 1) n = 1;
+                  id(current_page) = (id(current_page) + 1) % n;
+                  ESP_LOGW("page", "current_page = %d / %d", id(current_page), n);
+              - script.execute:
+                  id: refresh_dashboard
+                  nocache: false
 
   - platform: gpio
     id: button_left
@@ -513,18 +585,29 @@ binary_sensor:
       inverted: true
     on_press:
       then:
-        - logger.log:
-            level: WARN
-            format: "BUTTON: left white (GPIO5) → previous page"
-        - script.execute: chirp
-        - lambda: |-
-            int n = id(page_count);
-            if (n < 1) n = 1;
-            id(current_page) = (id(current_page) - 1 + n) % n;
-            ESP_LOGW("page", "current_page = %d / %d", id(current_page), n);
-        - script.execute:
-            id: refresh_dashboard
-            nocache: false
+        - if:
+            condition:
+              lambda: 'return id(button_locked);'
+            then:
+              - logger.log:
+                  level: WARN
+                  format: "BUTTON: left ignored (locked until sleep)"
+            else:
+              - lambda: 'id(button_locked) = true;'
+              - logger.log:
+                  level: WARN
+                  format: "BUTTON: left white (GPIO5) → previous page"
+              - script.execute: chirp
+              # See right-button handler for rationale; same self-heal trick.
+              - script.execute: fetch_page_count
+              - lambda: |-
+                  int n = id(page_count);
+                  if (n < 1) n = 1;
+                  id(current_page) = (id(current_page) - 1 + n) % n;
+                  ESP_LOGW("page", "current_page = %d / %d", id(current_page), n);
+              - script.execute:
+                  id: refresh_dashboard
+                  nocache: false
 
 # === Sensors ===
 sensor:

@@ -52,6 +52,7 @@ _CODEPOINTS: dict[str, str] = {
     "battery-outline": "F008E",
     "calendar": "F00ED",
     "cloud": "F015F",
+    "gauge": "F0269",
     "help-circle": "F02D7",
     "home": "F02DC",
     "snowflake": "F0717",

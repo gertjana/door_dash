@@ -141,9 +141,22 @@ def _fallback(settings: Settings) -> list[Event]:
 
 
 def fetch(settings: Settings) -> list[Event]:
+    """Fetch upcoming events for the dashboard's "Upcoming" list.
+
+    Returns an empty list when HA is unreachable or returns no events —
+    the calendar_list widget renders a "No upcoming events." message in
+    that case. The previous behaviour returned a hand-rolled sample set
+    (``_fallback``), which made it impossible to tell at a glance whether
+    the calendar integration was broken or genuinely empty.
+
+    ``fetch_range()`` (used by the month grid page) still falls back to
+    sample data when HA is unavailable so dev runs without a HA backend
+    are visually meaningful — the month grid would look entirely broken
+    if it had no data at all.
+    """
     ha = HAClient(settings)
     if not ha.available:
-        return _fallback(settings)
+        return []
 
     now = datetime.now(UTC)
     end_window = now + timedelta(days=30)
@@ -157,9 +170,6 @@ def fetch(settings: Settings) -> list[Event]:
             ev = _to_event(raw)
             if ev:
                 events.append(ev)
-
-    if not events:
-        return _fallback(settings)
 
     events.sort(key=lambda e: e.start)
     return events[: settings.max_events]

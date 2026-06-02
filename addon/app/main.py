@@ -151,24 +151,72 @@ def refresh() -> dict:
 
 @app.get("/debug")
 def debug() -> dict:
-    """Dump live config + probe the HA weather entity + list calendar entities.
-    Useful for diagnosing 'why is the dashboard showing fallback data?' issues.
+    """Dump live config + probe HA for weather/calendar entities.
+
+    Useful for diagnosing "why is the dashboard showing fallback data?"
+    issues. Probes each configured calendar in two ways:
+
+    * ``probe`` — does the entity exist? (calls ``/api/states/<entity>``)
+    * ``event_fetch`` — does the calendar API return events for the next
+      30 days? (calls ``/api/calendars/<entity>?start=...&end=...``)
+
+    The second probe is what the dashboard actually uses, so if ``probe``
+    says ``ok`` but ``event_fetch`` returns ``0 events`` or an HTTP error,
+    that's the source of the "no events visible" bug.
     """
+    from datetime import UTC, datetime, timedelta
+
+    import httpx
+
     from .ha_client import HAClient
 
     settings = get_settings()
     ha = HAClient(settings)
     weather_state = ha.get_state(settings.weather_entity)
-    # Probe configured calendars
+
+    # Probe configured calendars (existence check via /api/states)
     calendar_probe = {}
     for cal in settings.calendar_entities:
         state = ha.get_state(cal)
         calendar_probe[cal] = "ok" if state else "missing"
-    # Discover all calendar.* entities
+
+    # Probe configured calendars (real API fetch — what the dashboard uses).
+    # This is the diagnostic that matters when the integration is healthy
+    # (entity returns ok) but the dashboard still shows no events.
+    now = datetime.now(UTC)
+    end_window = now + timedelta(days=30)
+    start_iso = now.isoformat()
+    end_iso = end_window.isoformat()
+    event_fetch: dict[str, dict] = {}
+    for cal in settings.calendar_entities:
+        url = f"{settings.ha_base_url.rstrip('/')}/api/calendars/{cal}"
+        info: dict = {"url": url}
+        try:
+            r = httpx.get(
+                url,
+                headers={"Authorization": f"Bearer {settings.supervisor_token}"},
+                params={"start": start_iso, "end": end_iso},
+                timeout=10.0,
+            )
+            info["status"] = r.status_code
+            if r.status_code == 200:
+                data = r.json() or []
+                info["count"] = len(data)
+                # Include the first 3 raw events so we can see what HA
+                # actually returns — useful for diagnosing parsing bugs.
+                info["sample"] = data[:3]
+            else:
+                # Capture the error body so we can see auth/permission
+                # failures, missing-entity 404s, etc.
+                info["error_body"] = r.text[:500]
+        except httpx.HTTPError as e:
+            info["error"] = f"{type(e).__name__}: {e}"
+        event_fetch[cal] = info
+
+    # Discover all calendar.* entities so the user can spot typos in
+    # `calendar_entities` config vs. real entity IDs.
     discovered = []
     try:
-        import httpx
-
         r = httpx.get(
             f"{settings.ha_base_url}/api/states",
             headers={"Authorization": f"Bearer {settings.supervisor_token}"},
@@ -188,6 +236,7 @@ def debug() -> dict:
         "weather_temp": (weather_state or {}).get("attributes", {}).get("temperature"),
         "calendar_entities_configured": settings.calendar_entities,
         "calendar_entities_probe": calendar_probe,
+        "calendar_entities_event_fetch": event_fetch,
         "calendar_entities_discovered": discovered,
         "cache_entries": len(_cache),
     }

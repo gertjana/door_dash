@@ -30,8 +30,8 @@ from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw
 
-from ... import __version__ as ADDON_VERSION  # noqa: N812
 from ...sources.calendar import Event, fetch_range
+from ..badge import draw_version_badge
 from ..fonts import draw_crisp_text, font
 
 if TYPE_CHECKING:
@@ -137,6 +137,7 @@ def render(
     sensors: LocalSensors,
     fw_version: str | None = None,
 ) -> Image.Image:
+    """Draw the month calendar. See module docstring for layout details."""
     w, h = settings.width, settings.height
     img = Image.new("L", (w, h), color=255)
     draw = ImageDraw.Draw(img)
@@ -309,13 +310,7 @@ def render(
     # bold which we already did — no extra cell decoration per the
     # user's "bold day number only" preference).
 
-    # === Version badge (top-right, matching layout.py) ===
-    fw = fw_version or "?"
-    badge = f"v{ADDON_VERSION} \u00b7 fw{fw}"
-    bf = font(10)
-    bbbox = draw.textbbox((0, 0), badge, font=bf)
-    bw = bbbox[2] - bbbox[0]
-    # Place inside the header strip so it doesn't collide with the title.
-    draw_crisp_text(draw, (w - bw - 4, 2), badge, bf, fill=0)
+    # Version badge in the top-right corner (shared helper).
+    draw_version_badge(img, settings, fw_version, draw=draw)
 
     return img

@@ -1,19 +1,23 @@
 """Page registry — auto-discovers page modules in this directory.
 
-A "page" is a module exposing two attributes:
+A "page" is a module exposing:
 
-    TITLE: str                 — human-readable page name
-    render(settings, sensors, fw_version=None) -> PIL.Image.Image
+    TITLE: str                                  — human-readable page name
+    render(settings, sensors, fw_version=None)  — returns PIL.Image
 
-Pages are discovered by scanning this directory for ``*.py`` files (other
-than ``__init__.py``) and imported in **alphabetical filename order**. Use a
-numeric prefix (``00_``, ``01_``, …) on the filename to control ordering;
-the prefix is stripped from the canonical page name used in URLs.
+This is effectively the ``Page`` interface every page module must
+implement.
+
+Pages are discovered by scanning this directory for ``*.py`` files
+(other than ``__init__.py``) and imported in **alphabetical filename
+order**. Use a numeric prefix (``00_``, ``01_``, …) on the filename to
+control ordering; the prefix is stripped from the canonical page name
+used in URLs.
 
 Examples of canonical names:
 
-    00_dashboard.py   -> name "dashboard", index 0
-    01_week.py        -> name "week",      index 1
+    00_dashboard.py   -> name "dashboard",  index 0
+    01_calendar.py    -> name "calendar",   index 1
     02_placeholder.py -> name "placeholder", index 2
 
 The first page (index 0) is the default and is what gets served when no
@@ -45,6 +49,8 @@ _PREFIX_RE = re.compile(r"^\d+[_-]")
 
 
 class _PageModule(Protocol):
+    """Structural interface every page module is expected to satisfy."""
+
     TITLE: str
 
     def render(
