@@ -27,7 +27,7 @@ substitutions:
   # for active development. Must be 1 or 0 — used as C preprocessor literal.
   #
   # OTA workflow when dev_mode=0:
-  #   1. Press the right white button (GPIO4) — device wakes and stays awake.
+  #   1. Press any button (GPIO4) — device wakes and stays awake.
   #   2. `esphome run firmware/reterminal-dashboard.yaml` — pushes new firmware.
   #   3. Device reboots into new firmware, runs one refresh, sleeps again.
   dev_mode: "0"
@@ -195,7 +195,7 @@ globals:
     # known-good value we avoid being stuck on the initial default after
     # the addon grows or shrinks its page list.
     restore_value: true
-    initial_value: '3'
+    initial_value: '4'
   - id: button_locked
     # Set to true on the first button press of an awake cycle. Subsequent
     # presses are ignored until deep sleep clears RAM. Eliminates the
@@ -212,16 +212,9 @@ script:
   # GPIO45 drives a passive piezo via an LEDC PWM output at 2.7 kHz
   # (near the resonance peak of typical small piezos). 50% duty produces
   # a clean square-wave tone; 0% silences it.
-  #
-  # Triggered on EVERY button press — both awake (via the binary_sensor
-  # on_press handlers below) and on wake-from-deep-sleep (via the
-  # late-boot on_boot trigger above). 40 ms is short enough to feel like
-  # a click rather than a beep — the previous ~2 s tone was the annoying
-  # one. To go silent, set this script body to a no-op.
   - id: chirp
     # `queued` rather than `restart`: each press should produce its own
-    # distinct click. With `restart`, a rapid second press cancels the
-    # first chirp's "turn-off" step mid-delay, freezing the buzzer ON.
+    # distinct click.
     # `queued` lets each invocation complete its on→delay→off cycle.
     mode: queued
     then:
