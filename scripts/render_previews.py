@@ -20,6 +20,15 @@ SCENARIOS = [
         {"indoor_temp": 21.3, "indoor_hum": 48, "battery_pct": 87},
         {"EPDASH_SHOW_LOCAL_SENSORS": "false"},
     ),
+    # Energy page — renders fallback demo data when HA is unreachable
+    # (which is the case for previews running outside the addon container).
+    # The sensor params are ignored by this page; we still pass them so the
+    # version badge and other shared chrome render with realistic context.
+    (
+        "09_energy",
+        {"indoor_temp": 21.3, "indoor_hum": 48, "battery_pct": 87, "page": "energy"},
+        {},
+    ),
 ]
 
 
@@ -42,7 +51,7 @@ def render_all() -> None:
 
             c = TestClient(app)
             c.post("/refresh")
-            qs = _qs({**params, "fw": "0.2.0"})
+            qs = _qs({**params, "fw": "0.3.0"})
             png = c.get(f"/dashboard.png?{qs}").content
             bmp = c.get(f"/dashboard.bmp?{qs}").content
             with open(f"preview/{name}.png", "wb") as f:
