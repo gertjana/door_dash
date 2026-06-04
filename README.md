@@ -6,16 +6,20 @@ Renders Wi-Fi QR, weather, indoor sensors, and an upcoming calendar list.
 ## Architecture
 
 ```
-┌──────────────────┐                       ┌─────────────────────────────┐
-│ reTerminal E1001 │ ── HTTP GET ────────▶ │ Home Assistant (Pi)         │
-│ ESPHome firmware │   /pages              │  └─ "EPaper Dashboard"      │
-│ deep_sleep 15m   │ ◀──────────────────── │     add-on (FastAPI+Pillow) │
-│                  │   {"count": N, …}     │                             │
-│                  │                       │                             │
-│                  │ ── HTTP GET ────────▶ │                             │
-│                  │   /dashboard.bmp?…    │                             │
-│                  │ ◀──────────────────── │                             │
-└──────────────────┘   1-bit BMP 800×480   └─────────────────────────────┘
+┌──────────────────┐                         ┌─────────────────────────────┐    ┌─────────────────┐
+│ reTerminal E1001 │ ── HTTP GET ──────────▶ │ Home Assistant              │◀───| Tesla Fleet API |
+│ ESPHome firmware │   /pages                │  └─ "EPaper Dashboard"      │    └─────────────────┘
+│ deep_sleep 15m   │ ◀────────────────────── │  │  add-on (FastAPI+Pillow) │    ┌─────────────────┐
+│                  │   {"count": N, …}       │  │                          │◀───| Google Calendar |
+│                  │                         │  └─ ESPHome                 │    └─────────────────┘
+│                  │ ── HTTP GET ──────────▶ │                             │    ┌─────────────────┐
+│                  │   /dashboard.bmp?page=1 │                             │◀───| Met.no (Weather)|
+│                  │ ◀────────────────────── │                             │    └─────────────────┘
+│                  │   1-bit BMP 800×480     |                             |    ┌─────────────────┐
+│                  │                         │                             │◀───| Smartmeter P1   |
+└──────────────────┘                         └─────────────────────────────┘    └─────────────────┘
+
+
 ```
 
 The firmware learns the current page count from `/pages` (so adding a page
