@@ -30,6 +30,15 @@ if TYPE_CHECKING:
     from .widgets.base import Box
 
 
+# Below this many valid (non-None) buckets a "trace" is just a stray dot
+# or pair of dots, which combined with the baseline rule looks like a
+# misleading flat-line chart with one artefact at the edge. We drop the
+# baseline in that case so the cell reads as "almost no data" rather than
+# "zero across the window with a glitch". Three points is enough to draw
+# two line segments — the visual minimum of an actual trend.
+_MIN_TRACE_POINTS = 3
+
+
 def draw_sparkline(
     img: Image.Image,
     box: Box,
@@ -50,7 +59,10 @@ def draw_sparkline(
         include_zero: clamp y-min to 0 (use for power/current).
         show_baseline: draw a thin bottom rule across the box so the
             sparkline reads as a chart even when the line happens to sit
-            near the top of the cell.
+            near the top of the cell. Suppressed automatically when fewer
+            than ``_MIN_TRACE_POINTS`` valid samples are present, so that
+            a freshly-deployed entity (with only 1-2 buckets of recorded
+            history) doesn't look like a finished flat-line chart.
     """
     draw = ImageDraw.Draw(img)
     x0, y0 = box.x, box.y
@@ -58,13 +70,17 @@ def draw_sparkline(
     if w <= 1 or h <= 1:
         return
 
+    valid = [p for p in points if p is not None]
+    has_meaningful_trace = len(valid) >= _MIN_TRACE_POINTS
+
     # Subtle bottom rule. Top rule is omitted on purpose — adding both
     # makes the cell read like a heavy table border, which clashes with
-    # the actual table rules drawn by the page above.
-    if show_baseline:
+    # the actual table rules drawn by the page above. Skipped when there
+    # are too few samples to draw a meaningful trace, since the baseline
+    # alone looks like real "value sitting at zero" data.
+    if show_baseline and has_meaningful_trace:
         draw.line((x0, y0 + h - 1, x0 + w - 1, y0 + h - 1), fill=fill, width=1)
 
-    valid = [p for p in points if p is not None]
     if not valid:
         # No data yet (entity unconfigured, or just powered up). Draw a
         # short dashed line through the middle so the cell isn't visually
