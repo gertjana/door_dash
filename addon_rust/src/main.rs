@@ -34,6 +34,7 @@ use axum::{routing::get, Router};
 use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+use epaper_dashboard_rust::config::Settings;
 use epaper_dashboard_rust::ADDON_VERSION;
 
 #[tokio::main]
@@ -43,6 +44,15 @@ async fn main() -> Result<()> {
     info!(
         version = ADDON_VERSION,
         "starting reTerminal ePaper dashboard (Rust port)"
+    );
+
+    let settings = Settings::load();
+    info!(
+        weather = %settings.weather_entity,
+        calendars = ?settings.calendar_entities,
+        ha_base = %settings.ha_base_url,
+        ha_token_present = settings.supervisor_token.is_some(),
+        "configuration loaded"
     );
 
     // Subsequent phases will add dashboard.png/.bmp, /pages, /refresh

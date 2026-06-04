@@ -2,10 +2,12 @@
 //! integration tests, and exposes the addon version string parsed from
 //! `config.yaml` at compile time.
 //!
-//! Phase 1 only ships the version string + module skeleton. Subsequent
-//! phases populate `config`, `ha_client`, `render::*` and `sources::*`.
+//! Phase 2 introduces the `config` module. Subsequent phases populate
+//! `ha_client`, `render::*` and `sources::*`.
 
 #![forbid(unsafe_code)]
+
+pub mod config;
 
 /// Addon version, parsed from `config.yaml` at compile time.
 ///
