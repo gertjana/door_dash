@@ -1,0 +1,70 @@
+[package]
+name = "epaper-dashboard-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Renders an 800x480 1-bit dashboard image for the reTerminal E1001"
+license = "MIT"
+repository = "https://github.com/gertjana/door_dash"
+publish = false
+
+[[bin]]
+name = "epaper-dashboard-rust"
+path = "src/main.rs"
+
+[profile.release]
+# Tight, fast binary suitable for an HA add-on. LTO + a single codegen
+# unit shaves ~30% off the executable size; debug=0 strips DWARF (we
+# rely on `tracing` for diagnostics in production anyway).
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+debug = 0
+strip = "symbols"
+
+[dependencies]
+# HTTP server
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "query", "tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
+tower = { version = "0.5", default-features = false }
+
+# HA REST client. rustls (pure-Rust TLS) keeps the build hermetic — no
+# OpenSSL/system libs to track across aarch64/amd64/armv7.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip"] }
+
+# Config / serde
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Image rendering. `image` provides PNG/BMP encoding; `imageproc` adds
+# drawing primitives (lines, polygons). For text we render glyphs
+# manually with ab_glyph + a custom 1-bit threshold so the 800x480
+# output stays crisp on a 1-bit ePaper panel.
+image = { version = "0.25", default-features = false, features = ["png", "bmp"] }
+imageproc = { version = "0.25", default-features = false }
+ab_glyph = "0.2"
+
+# QR codes (Wi-Fi widget)
+qrcode = { version = "0.14", default-features = false }
+
+# Date/time + tz
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+chrono-tz = "0.10"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Concurrency primitives
+parking_lot = "0.12"
+
+# Tiny LRU for the rendered-image cache
+lru = "0.12"
+
+# Anyhow for ergonomic error handling on call sites where typed errors
+# would be more noise than signal (HTTP handlers, render pipeline).
+anyhow = "1"
+thiserror = "1"
+
+[dev-dependencies]
+# (none yet — populated when unit/integration tests are added)

@@ -1,0 +1,13 @@
+# Files we never want in the build context — keeps the COPY layer
+# small and ensures stale builds don't poison the cache.
+target/
+**/target/
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+*.md
+dist/
+.idea/
+.vscode/
+.DS_Store
