@@ -4,14 +4,16 @@
 //!
 //! Phase 2 introduces the `config` module. Phase 3 adds `ha_client`.
 //! Phase 4 adds `render` — image I/O, fonts, icons, and the shared
-//! version badge. Subsequent phases populate `render::widgets`,
-//! `render::pages` and `sources::*`.
+//! version badge. Phase 5 adds `sources` — async fetchers for HA
+//! state plus the local-sensor query-param normaliser. Subsequent
+//! phases populate `render::widgets`, `render::pages` and `http`.
 
 #![forbid(unsafe_code)]
 
 pub mod config;
 pub mod ha_client;
 pub mod render;
+pub mod sources;
 
 /// Addon version, parsed from `config.yaml` at compile time.
 ///
