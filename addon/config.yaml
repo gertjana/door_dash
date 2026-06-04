@@ -1,5 +1,5 @@
 name: ePaper Dashboard
-version: "0.2.0"
+version: "0.3.0"
 slug: epaper_dashboard
 description: Renders an 800x480 1-bit dashboard image for the reTerminal E1001
 url: https://github.com/gertjana/door_dash
@@ -36,6 +36,24 @@ options:
   tesla_range_entity: ""
   tesla_inside_temp_entity: ""
   tesla_climate_entity: ""
+  # Energy page (defaults match Zuidwijk SlimmeLezer firmware)
+  energy_power_produced_l1_entity: "sensor.power_produced_phase_1"
+  energy_power_produced_l2_entity: "sensor.power_produced_phase_2"
+  energy_power_produced_l3_entity: "sensor.power_produced_phase_3"
+  energy_power_consumed_l1_entity: "sensor.power_consumed_phase_1"
+  energy_power_consumed_l2_entity: "sensor.power_consumed_phase_2"
+  energy_power_consumed_l3_entity: "sensor.power_consumed_phase_3"
+  energy_voltage_l1_entity: "sensor.voltage_phase_1"
+  energy_voltage_l2_entity: "sensor.voltage_phase_2"
+  energy_voltage_l3_entity: "sensor.voltage_phase_3"
+  energy_current_l1_entity: "sensor.current_phase_1"
+  energy_current_l2_entity: "sensor.current_phase_2"
+  energy_current_l3_entity: "sensor.current_phase_3"
+  energy_tariff1_entity: "sensor.energy_consumed_tariff_1"
+  energy_tariff2_entity: "sensor.energy_consumed_tariff_2"
+  energy_gas_entity: "sensor.gas_consumed"
+  indoor_temp_entity: "sensor.door_dashboard_indoor_temperature"
+  indoor_humidity_entity: "sensor.door_dashboard_indoor_humidity"
 
 schema:
   wifi_ssid: str
@@ -54,3 +72,20 @@ schema:
   tesla_range_entity: str?
   tesla_inside_temp_entity: str?
   tesla_climate_entity: str?
+  energy_power_produced_l1_entity: str?
+  energy_power_produced_l2_entity: str?
+  energy_power_produced_l3_entity: str?
+  energy_power_consumed_l1_entity: str?
+  energy_power_consumed_l2_entity: str?
+  energy_power_consumed_l3_entity: str?
+  energy_voltage_l1_entity: str?
+  energy_voltage_l2_entity: str?
+  energy_voltage_l3_entity: str?
+  energy_current_l1_entity: str?
+  energy_current_l2_entity: str?
+  energy_current_l3_entity: str?
+  energy_tariff1_entity: str?
+  energy_tariff2_entity: str?
+  energy_gas_entity: str?
+  indoor_temp_entity: str?
+  indoor_humidity_entity: str?

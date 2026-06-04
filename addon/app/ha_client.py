@@ -42,6 +42,63 @@ class HAClient:
             return None
         return None
 
+    def get_history(
+        self,
+        entity_ids: list[str],
+        start_iso: str,
+        end_iso: str,
+    ) -> list[list[dict[str, Any]]]:
+        """Fetch state history for one or more entities in a single HTTP call.
+
+        Calls ``GET /api/history/period/<start_iso>?filter_entity_id=...`` and
+        returns a list-of-lists, one per entity, in the same order as the
+        input ``entity_ids``. Each inner list is the entity's state-change
+        events in chronological order (oldest first), each shaped like::
+
+            {"state": "1.234", "last_changed": "2026-...", "entity_id": "..."}
+
+        ``minimal_response`` and ``no_attributes`` are passed so HA omits the
+        full attributes dict — we only need ``state`` + ``last_changed``,
+        and dropping attrs cuts the payload size by an order of magnitude
+        on dense entities (e.g. power readings updating every second).
+
+        Returns a list of empty lists (not None) on error so callers can
+        zip / index without special-casing the failure path.
+        """
+        if not self.available or not entity_ids:
+            return [[] for _ in entity_ids]
+        # HA accepts comma-separated IDs in filter_entity_id and returns
+        # the inner lists in matching order — but only includes entities
+        # that actually have recorded history. Re-key by entity_id below
+        # so empty histories don't shift the order in the response.
+        url = f"{self.base}/api/history/period/{start_iso}"
+        try:
+            r = httpx.get(
+                url,
+                headers=self._headers(),
+                params={
+                    "filter_entity_id": ",".join(entity_ids),
+                    "end_time": end_iso,
+                    # Empty values mean "flag is set" for HA's parsing.
+                    "minimal_response": "",
+                    "no_attributes": "",
+                },
+                timeout=15.0,
+            )
+            if r.status_code == 200:
+                data = r.json() or []
+                by_id: dict[str, list[dict[str, Any]]] = {}
+                for series in data:
+                    if not series:
+                        continue
+                    eid = series[0].get("entity_id")
+                    if eid:
+                        by_id[eid] = series
+                return [by_id.get(eid, []) for eid in entity_ids]
+        except httpx.HTTPError:
+            pass
+        return [[] for _ in entity_ids]
+
     def get_calendar(self, entity_id: str, start_iso: str, end_iso: str) -> list[dict[str, Any]]:
         if not self.available:
             return []

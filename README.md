@@ -1,7 +1,22 @@
 # reTerminal E1001 ePaper Dashboard
 
 A doorside dashboard for the Seeed reTerminal E1001 ePaper display (7.5" mono, 800×480, UC8179, ESP32-S3).
-Renders Wi-Fi QR, weather, indoor sensors, and an upcoming calendar list.
+A multi-page carousel covering home status, calendar, weather, Tesla state, a personal greeting,
+and household energy use — driven by data from Home Assistant.
+
+## Pages
+
+The renderer auto-discovers page modules in `addon/app/render/pages/`; the carousel below reflects the
+default ordering (controlled by the `NN_` filename prefix). The firmware learns the page count from
+`/pages` so adding a page server-side does not require a reflash.
+
+| # | Page     | Contents                                                                            |
+|---|----------|-------------------------------------------------------------------------------------|
+| 0 | Dashboard| Wi-Fi QR, indoor temp/humidity, battery %, current weather, Tesla state.            |
+| 1 | Calendar | Month grid with the next ~8 events from each configured `calendar.*` entity.        |
+| 2 | Weather  | Hourly + multi-day forecast, sun/wind details, precipitation outlook.               |
+| 3 | Heart    | Decorative greeting page (configurable text).                                       |
+| 4 | Energy   | DSMR P1 phase table (W / V / A per L1/L2/L3) + 24h sparklines, indoor sensor 24h, cumulative tariff & gas counters. |
 
 ## Architecture
 
