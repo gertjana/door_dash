@@ -29,12 +29,15 @@ the same code paths the firmware sees during a brief HA outage.
   Rust returns 404. Firmware never calls it; it's an operator
   convenience and was deferred. Easy to add later if needed.
 * **BMP pixel content** — All five pages produce 48062-byte BMPs,
-  but 4–12% of byte positions differ between Python and Rust output
-  (heart 1872 / 48000 ≈ 3.9%, dashboard 5659 / 48000 ≈ 12%). Visual
-  inspection on 800×480 1-bit shows the layouts are equivalent; the
-  diffs come from font hinting (`ab_glyph` vs Pillow/FreeType), and
-  from the few places where each renderer happens to land a sub-pixel
-  glyph on a different mono-threshold side.
+  but a few percent of byte positions still differ between Python and
+  Rust output. The diffs come from font hinting (`ab_glyph` does no
+  hinting; Pillow's `fontmode = "1"` uses FreeType
+  `FT_LOAD_TARGET_MONO` which hints first then thresholds). At
+  `addon_rust` v1.0.1 the crisp-text coverage threshold was lowered
+  from 0.5 to 0.3 to compensate, narrowing the calendar ink-coverage
+  gap from ~14% to ~8% and bringing on-device readability in line with
+  the Python addon's output. Full hinting parity would require
+  switching rasteriser (e.g. fontdue), tracked as a future task.
 
 ## Performance
 

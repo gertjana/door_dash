@@ -30,6 +30,31 @@ pub const BODY_SIZE: f32 = 14.0;
 pub const SMALL_SIZE: f32 = 13.0;
 pub const BADGE_SIZE: f32 = 10.0;
 
+/// Coverage threshold below which a pixel is left untouched in
+/// `draw_crisp_text`. Lower values produce fatter strokes.
+///
+/// Calibrated against Pillow's `fontmode = "1"`, which uses FreeType's
+/// `FT_LOAD_TARGET_MONO`: hinted outline first, then a 50%-coverage
+/// threshold. ab_glyph does no hinting, so the same 0.5 threshold
+/// would drop the secondary stem column at small sizes (11–16 px) and
+/// produce visibly thinner glyphs than Pillow's output. Lowering the
+/// threshold widens stems by one column on average and brings rendered
+/// ink coverage closer to the Python addon's BMPs.
+///
+/// Empirical sweep against Python (calendar / dashboard pages):
+///
+/// | threshold | calendar Δink | dashboard Δink |
+/// | --------- | ------------- | -------------- |
+/// | 0.50      | −14.4%        | −19.0%         |
+/// | 0.40      | −10.5%        | −16.9%         |
+/// | 0.30      |  −7.7%        | −15.1%         |
+/// | 0.25      |  −5.5%        | −14.2%         |
+///
+/// 0.30 is the chosen middle ground — substantially heavier strokes
+/// than 0.5 (so calendar entries read like the Python output on the
+/// e-paper) without crossing into over-bolded territory at body sizes.
+const CRISP_COVERAGE_THRESHOLD: f32 = 0.30;
+
 /// Font weight selector for `font_for`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Weight {
@@ -183,7 +208,7 @@ fn draw_glyphs(canvas: &mut GrayImage, run: &TextRun<'_>, aa: AntiAlias) {
                 }
                 match aa {
                     AntiAlias::No => {
-                        if alpha >= 0.5 {
+                        if alpha >= CRISP_COVERAGE_THRESHOLD {
                             canvas.put_pixel(px as u32, py as u32, Luma([fill]));
                         }
                     }
