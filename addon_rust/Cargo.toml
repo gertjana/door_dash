@@ -25,7 +25,7 @@ strip = "symbols"
 # HTTP server
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "query", "tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
-tower = { version = "0.5", default-features = false }
+tower = { version = "0.5", default-features = false, features = ["util"] }
 
 # HA REST client. rustls (pure-Rust TLS) keeps the build hermetic — no
 # OpenSSL/system libs to track across aarch64/amd64/armv7.

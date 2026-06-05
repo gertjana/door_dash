@@ -12,6 +12,7 @@
 
 pub mod config;
 pub mod ha_client;
+pub mod http;
 pub mod render;
 pub mod sources;
 

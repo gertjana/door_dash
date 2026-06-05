@@ -30,11 +30,11 @@
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
-use axum::{routing::get, Router};
 use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use epaper_dashboard_rust::config::Settings;
+use epaper_dashboard_rust::http::{router, AppState};
 use epaper_dashboard_rust::ADDON_VERSION;
 
 #[tokio::main]
@@ -55,10 +55,12 @@ async fn main() -> Result<()> {
         "configuration loaded"
     );
 
-    // Subsequent phases will add dashboard.png/.bmp, /pages, /refresh
-    // etc; for now a /healthz probe is enough to verify the binary
-    // boots inside the HA add-on container.
-    let app = Router::new().route("/healthz", get(healthz));
+    // Build app state once and share it across all handlers via
+    // axum's `State` extractor. The cache lives inside the state so
+    // it survives between requests (would otherwise be reset each
+    // time, defeating the whole point).
+    let state = AppState::new(settings);
+    let app = router(state);
 
     // Port is overridable via EPDASH_PORT for local dev; defaults to
     // 8099 to match config.yaml's `ingress_port`. Lets us boot the
@@ -77,15 +79,6 @@ async fn main() -> Result<()> {
         .await
         .context("axum server failure")?;
     Ok(())
-}
-
-/// `/healthz` — simple "is the binary up?" probe. Mirrors the Python
-/// addon's response shape so health-check tooling can be reused 1:1.
-async fn healthz() -> axum::Json<serde_json::Value> {
-    axum::Json(serde_json::json!({
-        "ok": true,
-        "addon_version": ADDON_VERSION,
-    }))
 }
 
 /// Subscriber that respects `RUST_LOG` (defaulting to `info`) and emits
