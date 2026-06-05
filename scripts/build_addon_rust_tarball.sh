@@ -71,6 +71,11 @@ echo
 echo "Next: serve dist/ on the static file server that the HA host"
 echo "downloads from (port 8765 in your case), then on the HA host:"
 echo "  wget -O /tmp/epaper_rust.tar.gz http://<server>:8765/epaper_dashboard_rust.tar.gz"
-echo "  rm -rf /addons/epaper_dashboard_rust && mkdir -p /addons/epaper_dashboard_rust"
-echo "  tar -xzf /tmp/epaper_rust.tar.gz -C /addons/epaper_dashboard_rust"
+echo "  rm -rf /addons/epaper_dashboard && mkdir -p /addons/epaper_dashboard"
+echo "  tar -xzf /tmp/epaper_rust.tar.gz -C /addons/epaper_dashboard"
 echo "  # then in HA: Supervisor → Local add-ons → Check for updates"
+echo
+echo "Note: the Rust addon ships under slug 'epaper_dashboard' (same as"
+echo "the Python addon) so HA preserves your existing options across"
+echo "the upgrade. To roll back, re-extract dist/epaper_dashboard.tar.gz"
+echo "into /addons/epaper_dashboard."

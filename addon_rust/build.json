@@ -1,6 +1,6 @@
 {
-  "name": "ePaper Dashboard (Rust)",
-  "description": "Rust port of the ePaper dashboard renderer for the reTerminal E1001",
+  "name": "ePaper Dashboard",
+  "description": "Renders an 800x480 1-bit dashboard image for the reTerminal E1001 (Rust port)",
   "url": "https://github.com/gertjana/door_dash",
   "maintainer": "gertjana",
   "build_from": {

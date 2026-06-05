@@ -1,7 +1,7 @@
-name: ePaper Dashboard (Rust)
-version: "0.1.0"
-slug: epaper_dashboard_rust
-description: Rust port of the ePaper dashboard renderer for the reTerminal E1001
+name: ePaper Dashboard
+version: "1.0.0"
+slug: epaper_dashboard
+description: Renders an 800x480 1-bit dashboard image for the reTerminal E1001 (Rust port)
 url: https://github.com/gertjana/door_dash
 arch:
   - aarch64
@@ -15,7 +15,7 @@ ingress_port: 8099
 panel_icon: mdi:image-frame
 homeassistant_api: true
 ports:
-  "8099/tcp": 8100
+  "8099/tcp": 8099
 ports_description:
   "8099/tcp": Dashboard image endpoint (LAN, Rust port)
 
