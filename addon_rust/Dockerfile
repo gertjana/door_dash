@@ -20,7 +20,18 @@
 # iteration. The HA add-on builder doesn't honour this mount, so cold
 # CI builds still take a few minutes — that's fine for a release flow.
 
-ARG RUST_VERSION=1.83
+# Both ARGs declared globally (before any FROM) so BuildKit
+# propagates them to every stage's FROM. Putting BUILD_FROM
+# between stages used to work in classic Docker but BuildKit treats
+# it as stage-local — leaving the second FROM with a blank ref.
+#
+# RUST_VERSION must be >= 1.85 because some transitive deps in the
+# tree (hashbrown 0.17, ...) require the `edition2024` Cargo
+# feature, stabilised in 1.85. Pin to 1.90 to match the dev
+# toolchain and so reproducible builds stay reproducible.
+ARG RUST_VERSION=1.90
+ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.20
+
 FROM rust:${RUST_VERSION}-alpine AS builder
 
 # musl-dev: needed because some -sys crates compile a C shim. Even the
@@ -43,26 +54,30 @@ RUN mkdir src && echo 'fn main() {}' > src/main.rs && \
 # include_bytes! macros) and build for real. Anything in `assets/` is
 # part of the binary at compile time, so changes there trigger a
 # rebuild — same as a source change.
+#
+# config.yaml has to be in the builder context too: src/lib.rs
+# computes ADDON_VERSION from `include_str!("../config.yaml")` at
+# compile time. Without it, the lib crate fails to compile.
 COPY src ./src
 COPY assets ./assets
+COPY config.yaml ./config.yaml
 RUN cargo build --release --locked && \
     strip target/release/epaper-dashboard-rust
 
 
 # Runtime stage — HA's per-arch Alpine base. Provides s6-overlay so
 # our run.sh can use `with-contenv` (mirrors the Python add-on's
-# behaviour for SUPERVISOR_TOKEN injection).
-ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.20
+# behaviour for SUPERVISOR_TOKEN injection). BUILD_FROM is the
+# global ARG declared at the top of this file.
 FROM ${BUILD_FROM}
 
 ENV LANG=C.UTF-8
 
 WORKDIR /opt/app
 
-COPY --from=builder /build/target/release/epaper-dashboard-rust /opt/app/epaper-dashboard-rust
+COPY --from=builder --chmod=755 /build/target/release/epaper-dashboard-rust /opt/app/epaper-dashboard-rust
 COPY config.yaml /opt/app/config.yaml
-COPY run.sh /run.sh
-RUN chmod +x /run.sh /opt/app/epaper-dashboard-rust
+COPY --chmod=755 run.sh /run.sh
 
 EXPOSE 8099
 CMD ["/run.sh"]
