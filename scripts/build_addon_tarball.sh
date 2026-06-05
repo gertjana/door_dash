@@ -41,11 +41,18 @@ find "${addon_dir}" -type f -name '*.pyc' -delete
 # Build the tarball. Contents are relative to addon/ so unpacking with
 # `tar -xzf … -C /addons/epaper_dashboard` lands files directly (no
 # extra `addon/` wrapper directory).
-tar -czf "${out_tar}" \
+#
+# COPYFILE_DISABLE=1 stops macOS BSD tar from embedding AppleDouble
+# metadata files (`._foo`) for every entry. Without it, those
+# resource-fork stubs extract as visible files on Linux and break
+# HA's addon parser, which globs the dir for config.yaml/build.json
+# and tries to parse the binary stubs as YAML/JSON.
+COPYFILE_DISABLE=1 tar -czf "${out_tar}" \
     --exclude='.DS_Store' \
     --exclude='*.pyc' \
     --exclude='__pycache__' \
     --exclude='.env' \
+    --exclude='._*' \
     -C "${addon_dir}" .
 
 # Verify by extracting just config.yaml from the produced tar and

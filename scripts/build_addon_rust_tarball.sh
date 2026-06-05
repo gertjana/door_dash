@@ -43,17 +43,26 @@ fi
 mkdir -p "${out_dir}"
 
 # Build the tarball. Contents are relative to addon_rust/ so
-# unpacking with `tar -xzf … -C /addons/epaper_dashboard_rust`
-# lands files directly (no extra wrapper directory).
+# unpacking with `tar -xzf … -C /addons/epaper_dashboard` lands
+# files directly (no extra wrapper directory).
+#
+# COPYFILE_DISABLE=1 stops macOS BSD tar from embedding AppleDouble
+# metadata files (`._foo`) for every entry. Without it, those
+# resource-fork stubs extract as visible files on Linux and break
+# HA's addon parser, which globs the dir for config.yaml/build.json
+# and tries to parse the binary stubs as YAML/JSON.
 #
 # Excludes:
 #   * target/        — local cargo build cache, ~500 MB; HA rebuilds it
 #   * .DS_Store      — macOS Finder metadata
 #   * .env           — dev-only secrets if present
-tar -czf "${out_tar}" \
+#   * ._*            — belt-and-suspenders against AppleDouble in
+#                      case anything sneaks past COPYFILE_DISABLE
+COPYFILE_DISABLE=1 tar -czf "${out_tar}" \
     --exclude='.DS_Store' \
     --exclude='.env' \
     --exclude='target' \
+    --exclude='._*' \
     -C "${addon_dir}" .
 
 # Verify by extracting just config.yaml from the produced tar and
