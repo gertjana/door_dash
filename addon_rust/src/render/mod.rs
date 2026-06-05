@@ -20,6 +20,8 @@ pub mod badge;
 pub mod fonts;
 pub mod icons;
 pub mod image_io;
+pub mod sparkline;
+pub mod widgets;
 
 use image::GrayImage;
 
