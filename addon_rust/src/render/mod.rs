@@ -20,6 +20,7 @@ pub mod badge;
 pub mod fonts;
 pub mod icons;
 pub mod image_io;
+pub mod pages;
 pub mod sparkline;
 pub mod widgets;
 
