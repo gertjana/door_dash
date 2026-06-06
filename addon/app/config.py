@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     height: int = 480
 
     # Wi-Fi QR
-    wifi_ssid: str = "MoTeds_Quest"
+    wifi_ssid: str = "YourWiFi"
     wifi_password: str = ""
     wifi_security: str = "nopass"  # WPA / WEP / nopass
     wifi_hidden: bool = False

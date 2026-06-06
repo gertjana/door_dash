@@ -103,7 +103,7 @@ impl Default for Settings {
             width: DEFAULT_WIDTH,
             height: DEFAULT_HEIGHT,
 
-            wifi_ssid: "MoTeds_Quest".to_owned(),
+            wifi_ssid: "YourWiFi".to_owned(),
             wifi_password: String::new(),
             wifi_security: "nopass".to_owned(),
             wifi_hidden: false,

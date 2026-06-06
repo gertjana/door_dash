@@ -23,6 +23,8 @@ firmware/secrets.yaml
 addon/app/data/
 *.log
 .env
+config_backup*.yaml
+*.backup.yaml
 
 # Build artefacts
 dist/
