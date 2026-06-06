@@ -180,7 +180,11 @@ pub fn render(canvas: &mut GrayImage, settings: &Settings, events: &[Event], rec
     let time_f = font_for(Weight::Regular);
     let time_size: f32 = 13.0;
     let title_f_row = font_for(Weight::Bold);
-    let title_size_row: f32 = 16.0;
+    // Bumped 16→18 for e-paper readability. Title bbox at 18 px is
+    // ~20 px tall; location at y+19 still clears it (1 px gap) and the
+    // total row content (title + location below) stays within the
+    // existing row_h = 36, so no other geometry needs to move.
+    let title_size_row: f32 = 18.0;
     let tag_f = font_for(Weight::Bold);
     let tag_size: f32 = 12.0;
     let loc_f = font_for(Weight::Regular);
