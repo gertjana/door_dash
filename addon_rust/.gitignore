@@ -1,2 +1,8 @@
 /target
 Cargo.lock.bak
+
+# Cross-compiled musl binaries produced by
+# scripts/build_addon_rust_binaries.sh and bundled into the addon
+# tarball. They're build artifacts, not tracked in git — anyone
+# building from a fresh clone runs the build script to generate them.
+/prebuilt/
