@@ -48,8 +48,8 @@ const TOP_INSET: i32 = 14;
 const HERO_HEIGHT: i32 = 140; // row 1: hero + stats merged
 const HOURLY_HEIGHT: i32 = 160; // row 2: hourly forecast strip
                                 // Row 3 (weekly) takes whatever vertical space remains.
-const SECTION_GAP: i32 = 12; // gap above/below the separator rule between rows
-const FORECAST_LABEL_HEIGHT: i32 = 26; // heading + breathing room
+const SECTION_GAP: i32 = 10; // gap above/below the separator rule between rows
+const FORECAST_LABEL_HEIGHT: i32 = 22; // heading + breathing room
 const HOURLY_COL_MIN: i32 = 86; // min width per hourly column
 const WEEKLY_COL_MIN: i32 = 88; // min width per weekly column
 const STATS_ROW_GAP: i32 = 4;
@@ -439,11 +439,11 @@ fn draw_hourly(
     let col_w = w / max_cols;
 
     let day_f = font_for(Weight::Bold);
-    let day_size: f32 = 14.0;
+    let day_size: f32 = 16.0;
     let hour_f = font_for(Weight::Regular);
-    let hour_size: f32 = 14.0;
+    let hour_size: f32 = 16.0;
     let temp_f = font_for(Weight::Bold);
-    let temp_size: f32 = 16.0;
+    let temp_size: f32 = 18.0;
     let icon_sz: i32 = 32;
 
     let inner_top = grid_top;
@@ -570,12 +570,12 @@ fn draw_weekly(
     let col_w = w / max_cols;
 
     let day_f = font_for(Weight::Bold);
-    let day_size: f32 = 14.0;
+    let day_size: f32 = 16.0;
     let hi_f = font_for(Weight::Bold);
-    let hi_size: f32 = 15.0;
+    let hi_size: f32 = 17.0;
     let lo_f = font_for(Weight::Regular);
-    let lo_size: f32 = 14.0;
-    let icon_sz: i32 = 32;
+    let lo_size: f32 = 16.0;
+    let icon_sz: i32 = 28;
 
     let day_h = day_size as i32 + 2;
     let hi_h = hi_size as i32 + 2;
