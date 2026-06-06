@@ -1,5 +1,5 @@
 name: ePaper Dashboard
-version: "1.0.3"
+version: "1.0.4"
 slug: epaper_dashboard
 description: Renders an 800x480 1-bit dashboard image for the reTerminal E1001 (Rust port)
 url: https://github.com/gertjana/door_dash

@@ -121,7 +121,7 @@ pub fn render(canvas: &mut GrayImage, settings: &Settings, weather: &Weather, re
 
     // ----- Detail lines: condition + wind below the icon/temp -----
     let detail_f = font_for(Weight::Regular);
-    let detail_size: f32 = 13.0;
+    let detail_size: f32 = 14.0;
     let line_h = (detail_size as i32) + 2;
     let detail_x = left_x;
     let detail_y = top_y + temp_h + 10;
@@ -189,10 +189,10 @@ pub fn render(canvas: &mut GrayImage, settings: &Settings, weather: &Weather, re
     let col_w = available_w / max_cols as i32;
 
     let day_f = font_for(Weight::Bold);
-    let day_size: f32 = 12.0;
-    let icon_sz: i32 = 24;
+    let day_size: f32 = 14.0;
+    let icon_sz: i32 = 26;
     let temp_small_f = font_for(Weight::Bold);
-    let temp_small_size: f32 = 13.0;
+    let temp_small_size: f32 = 14.0;
 
     for (i, fcast) in cols.iter().enumerate() {
         let cx = forecast_x + (i as i32) * col_w;
