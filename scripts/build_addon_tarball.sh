@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
-# Build a clean tarball of the addon for upload to Home Assistant.
+# Build a clean tarball of the addon for manual upload to a Home Assistant host.
+#
+# NOTE: This is the legacy install path. The supported install flow is now
+# to add this GitHub repository to Home Assistant as an add-on repository
+# (see the top-level README). The Supervisor then builds the image on the
+# host and handles updates automatically.
+#
+# This script is kept for:
+#   - air-gapped HA installs that can't reach github.com
+#   - quick local iteration on a single host without a git push
 #
 # Output: dist/epaper_dashboard.tar.gz
 #

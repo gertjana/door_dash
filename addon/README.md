@@ -3,15 +3,14 @@
 Renders an 800×480 1-bit dashboard image for the Seeed reTerminal E1001
 ePaper display. The ESP32-S3 firmware fetches the image every 15 minutes.
 
-## Install (local add-on)
+## Install
 
-1. Copy this `addon/` folder to `/addons/epaper_dashboard/` on your Home
-   Assistant host (Samba/SSH add-on makes this easy).
-2. In Home Assistant: **Settings → Add-ons → Add-on Store → ⋮ → Check for updates**.
-3. The "ePaper Dashboard" add-on appears under **Local add-ons**. Install it.
-4. Configure options (Wi-Fi SSID/password for QR, weather entity, calendar
-   entities), then start the add-on.
-5. Open the Ingress panel (or visit `http://<ha-ip>:8099/`) to preview.
+Add this repository to Home Assistant and install via the add-on store —
+see the [top-level README](../README.md#install-the-add-on) for the
+one-click badge and step-by-step instructions.
+
+For local development against a checkout of this repo, see
+[Local development](#local-development) below.
 
 ## Endpoints
 

@@ -51,6 +51,55 @@ as query parameters (`?indoor_temp=…&indoor_hum=…&battery_pct=…`) on each
 wake, so the displayed reading is always current-cycle accurate. They're also
 published to Home Assistant as sensor entities for history and automations.
 
+## Install the add-on
+
+This repository is itself a Home Assistant add-on repository, so the
+Supervisor can install and keep the add-on up to date directly from
+GitHub — no SSH, Samba, or tarballs required.
+
+### 1. Add the repository
+
+Click the badge to open the **Add repository** dialog with the URL
+pre-filled:
+
+[![Open your Home Assistant instance and show the dialog for adding a repository.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fgertjana%2Fdoor_dash)
+
+…or do it manually: **Settings → Add-ons → Add-on store → ⋮ →
+Repositories**, paste
+
+```
+https://github.com/gertjana/door_dash
+```
+
+and click **Add**.
+
+### 2. Install the add-on
+
+The store now lists a **reTerminal ePaper Dashboard** section
+containing the **ePaper Dashboard** add-on. Open it and click
+**Install** — the Supervisor builds the image on the HA host the
+first time (a few minutes on a Raspberry Pi).
+
+### 3. Configure & start
+
+In the add-on's **Configuration** tab, set at minimum:
+
+* `wifi_ssid` / `wifi_password` — used only to render the on-screen
+  Wi-Fi QR for the firmware to scan
+* `weather_entity` (e.g. `weather.home`)
+* `calendar_entities` — one or more `calendar.*` entity IDs
+
+Start the add-on, then open the **Web UI** (Ingress) to confirm a
+preview renders.
+
+### Updating
+
+Bumping `version:` in `addon/config.yaml` on `main` (and adding a
+matching section to [`addon/CHANGELOG.md`](addon/CHANGELOG.md)) is
+all that's needed. The Supervisor polls the repository and surfaces
+an **Update** button in the UI; the changelog section for the new
+version is shown in the update dialog.
+
 ### Rendering notes
 
 The display is 1-bit. The renderer threshold-converts (no dithering) and uses
