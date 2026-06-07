@@ -65,9 +65,18 @@ schema:
   tesla_range_entity: str?
   tesla_inside_temp_entity: str?
   tesla_climate_entity: str?
+  energy_power_produced_l1_entity: str?
+  energy_power_produced_l2_entity: str?
+  energy_power_produced_l3_entity: str?
   energy_power_consumed_l1_entity: str?
+  energy_power_consumed_l2_entity: str?
+  energy_power_consumed_l3_entity: str?
   energy_voltage_l1_entity: str?
+  energy_voltage_l2_entity: str?
+  energy_voltage_l3_entity: str?
   energy_current_l1_entity: str?
+  energy_current_l2_entity: str?
+  energy_current_l3_entity: str?
   energy_tariff1_entity: str?
   energy_tariff2_entity: str?
   energy_gas_entity: str?
