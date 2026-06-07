@@ -20,11 +20,12 @@ All sparklines carry small axis labels:
     the same numeric scale draw_sparkline actually mapped to. The unit
     is implied by the row label; numbers are unitless to keep the font
     small enough not to compete with the trace.
-  * X-axis: 24h-ago / 12h-ago / "now", rendered as ``HH:MM`` in the
-    user's configured timezone. Labels reflect *current* clock time
-    (a label of "14:30" means the leftmost sample was taken at 14:30
-    yesterday), which is more honest than fixed midnight/noon ticks
-    when the panel can refresh at any time of day.
+  * X-axis: 24h-ago / 12h-ago / now, all rendered as ``HH:MM`` in the
+    user's resolved timezone. Labels reflect *current* clock time
+    (a label of "14:30" on the left means the leftmost sample was
+    taken at 14:30 yesterday); the leftmost and rightmost will read
+    identically when the panel happens to refresh on a 24 h boundary,
+    which is fine — the column header already says "Last 24 h".
 
 All data comes from a single ``sources.energy.fetch`` call. Layout is
 bespoke (not widget-based) — the table is dense enough that
@@ -92,9 +93,22 @@ TOTALS_BODY_H = 42
 # Axis label gutters inside a sparkline cell. Y-labels sit in a column
 # at the left of the cell; X-labels sit on a row below the plot. Both
 # are rendered at font(11) which is ~8-9 px cap-height + 2-3 px descender.
-AXIS_Y_W = 30
-AXIS_X_H = 12
+#
+# Sizes are deliberately a bit roomy: ``AXIS_Y_W`` accommodates 5-char
+# labels like ``"1,774"`` plus the ``AXIS_Y_LABEL_GAP`` between label
+# and plot. ``AXIS_X_H`` includes the ``AXIS_X_LABEL_GAP`` separation
+# from the sparkline's bottom-baseline rule, so labels don't visually
+# stick to the plot border.
+AXIS_Y_W = 38
+AXIS_X_H = 16
 AXIS_LABEL_PT = 11
+AXIS_Y_LABEL_GAP = 6  # horizontal gap from y-label right edge to plot.x
+AXIS_X_LABEL_GAP = 4  # vertical gap from sparkline baseline to x-label top
+# Inset y-min/y-max labels slightly inward from the plot's vertical
+# extremes so they don't sit literally on the top edge or descend into
+# the bottom baseline rule. Values are in pixels.
+AXIS_Y_TOP_INSET = 1
+AXIS_Y_BOTTOM_INSET = 3
 
 # Vertical gap between sections (top + horizontal rule + bottom).
 SECTION_GAP = 10
@@ -188,20 +202,21 @@ def _axis_pct(v: float) -> str:
 
 
 def _x_labels(settings: Settings) -> tuple[str, str, str]:
-    """Return (24h-ago, 12h-ago, "now") clock-time labels for the x-axis.
+    """Return (24h-ago, 12h-ago, now) clock-time labels for the x-axis.
 
-    Times are formatted ``HH:MM`` in the resolved timezone (HA's
+    All three are formatted ``HH:MM`` in the resolved timezone (HA's
     ``/api/config`` if available, falling back to the addon option).
-    The third label is a literal "now" rather than the current time,
-    since showing a clock would invite the reader to verify it against
-    actual now and the panel only refreshes every few minutes.
+    The leftmost and rightmost will read identically when the panel
+    refreshes exactly at the hour boundary — that's expected, since
+    the window is by definition the last 24 h, and the column header
+    already labels it as such.
     """
     tz = resolve_timezone(settings)
     now = datetime.now(tz)
     return (
         (now - timedelta(hours=24)).strftime("%H:%M"),
         (now - timedelta(hours=12)).strftime("%H:%M"),
-        "now",
+        now.strftime("%H:%M"),
     )
 
 
@@ -241,32 +256,40 @@ def _draw_sparkline_with_axes(
 
     label_f = font(AXIS_LABEL_PT)
 
-    # Y-axis labels (top-left = max, bottom-left = min). These sit in
-    # the AXIS_Y_W column to the left of the plot. Right-align them
+    # Y-axis labels (top-left = max, bottom-left = min). They sit in
+    # the AXIS_Y_W column to the left of the plot, right-aligned
     # against the plot edge so multi-digit and single-digit values
     # don't visually drift apart in adjacent rows.
+    #
+    # Vertically the labels are inset a few pixels from the plot's
+    # extremes — ``AXIS_Y_TOP_INSET`` keeps the top label off the very
+    # top edge (where the trace can also reach), and
+    # ``AXIS_Y_BOTTOM_INSET`` lifts the bottom label clear of the
+    # ``draw_sparkline`` baseline rule so digit descenders don't
+    # collide with it.
     if rng is not None:
         y_min, y_max = rng
         for value, y_pos in (
-            (y_max, plot.y),
-            (y_min, plot.y + plot.h - AXIS_LABEL_PT),
+            (y_max, plot.y + AXIS_Y_TOP_INSET),
+            (y_min, plot.y + plot.h - AXIS_LABEL_PT - AXIS_Y_BOTTOM_INSET),
         ):
             text = y_fmt(value)
             tb = draw.textbbox((0, 0), text, font=label_f)
             tw = tb[2] - tb[0]
             draw_crisp_text(
                 draw,
-                (plot.x - 2 - tw, y_pos),
+                (plot.x - AXIS_Y_LABEL_GAP - tw, y_pos),
                 text,
                 label_f,
                 fill=0,
             )
 
     # X-axis labels along the bottom: left-aligned start, centred mid,
-    # right-aligned end. Always drawn so the page reads as a chart even
-    # when there's no data yet.
+    # right-aligned end. ``AXIS_X_LABEL_GAP`` keeps them clear of the
+    # baseline rule above. Always drawn so the page reads as a chart
+    # even when there's no trace data yet.
     left_lbl, mid_lbl, right_lbl = x_labels
-    label_y = plot.y + plot.h + 2
+    label_y = plot.y + plot.h + AXIS_X_LABEL_GAP
 
     draw_crisp_text(draw, (plot.x, label_y), left_lbl, label_f, fill=0)
 
