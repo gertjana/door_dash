@@ -212,7 +212,7 @@ def fetch(settings: Settings) -> EnergyState:
 
     out = EnergyState()
 
-    # Per-phase live values. Each ``_read_state`` swallows errors and
+    # Live values (L1 only). Each ``_read_state`` swallows errors and
     # returns None, so partial data still renders gracefully.
     out.power_consumed = _read_state(ha, settings.energy_power_consumed_l1_entity)
     out.voltage = _read_state(ha, settings.energy_voltage_l1_entity)
