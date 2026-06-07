@@ -61,18 +61,11 @@ class Settings(BaseSettings):
     # Energy / DSMR P1 reader. Defaults match the Zuidwijk SlimmeLezer
     # firmware naming (`Power Consumed Phase 1` -> `sensor.power_consumed_phase_1`).
     # Override per-entity in addon options if your firmware uses different names.
-    energy_power_produced_l1_entity: str = "sensor.power_produced_phase_1"
-    energy_power_produced_l2_entity: str = "sensor.power_produced_phase_2"
-    energy_power_produced_l3_entity: str = "sensor.power_produced_phase_3"
+    # Single-phase, consumption-only — solar production and L2/L3 are not
+    # modelled; reinstate as needed if the install grows.
     energy_power_consumed_l1_entity: str = "sensor.power_consumed_phase_1"
-    energy_power_consumed_l2_entity: str = "sensor.power_consumed_phase_2"
-    energy_power_consumed_l3_entity: str = "sensor.power_consumed_phase_3"
     energy_voltage_l1_entity: str = "sensor.voltage_phase_1"
-    energy_voltage_l2_entity: str = "sensor.voltage_phase_2"
-    energy_voltage_l3_entity: str = "sensor.voltage_phase_3"
     energy_current_l1_entity: str = "sensor.current_phase_1"
-    energy_current_l2_entity: str = "sensor.current_phase_2"
-    energy_current_l3_entity: str = "sensor.current_phase_3"
     # Cumulative totals (kWh delivered per tariff, m³ gas)
     energy_tariff1_entity: str = "sensor.energy_consumed_tariff_1"
     energy_tariff2_entity: str = "sensor.energy_consumed_tariff_2"

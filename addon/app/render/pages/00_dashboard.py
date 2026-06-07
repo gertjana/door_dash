@@ -29,7 +29,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw
 
@@ -37,6 +36,7 @@ from ...sources import calendar as calendar_src
 from ...sources import tesla as tesla_src
 from ...sources import weather as weather_src
 from ...sources.local_sensors import LocalSensors
+from ...timezone import resolve_timezone
 from ..badge import draw_version_badge
 from ..fonts import draw_crisp_text, font
 from ..widgets import calendar_list, local_sensors, qr, tesla, weather
@@ -78,10 +78,7 @@ def _draw_footer_timestamp(
     footer_top: int,
 ) -> None:
     """Bottom-left footer: today's date and the "Refreshed HH:MM" stamp."""
-    try:
-        tz = ZoneInfo(settings.timezone)
-    except Exception:
-        tz = ZoneInfo("UTC")
+    tz = resolve_timezone(settings)
     now = datetime.now(tz)
 
     # Thin separator above the footer

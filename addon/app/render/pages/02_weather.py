@@ -29,12 +29,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw
 
 from ...sources import weather as weather_src
 from ...sources.weather import bearing_to_cardinal
+from ...timezone import resolve_timezone
 from ..badge import draw_version_badge
 from ..fonts import draw_crisp_text, font
 from ..icons import draw_icon, icon_for_weather_state
@@ -63,13 +63,6 @@ STATS_ROW_GAP = 4
 HERO_LEFT_FRAC = 0.34
 HERO_MID_FRAC = 0.30
 # Right column gets the remainder (≈ 0.36).
-
-
-def _tz(settings: Settings) -> ZoneInfo:
-    try:
-        return ZoneInfo(settings.timezone)
-    except Exception:
-        return ZoneInfo("UTC")
 
 
 def _fmt_temp(t: float | None, unit: str = "°") -> str:
@@ -127,7 +120,7 @@ def _draw_hero_left(
     cond_bbox = draw.textbbox((0, 0), cond_label, font=cond_f)
     cond_h = cond_bbox[3] - cond_bbox[1]
 
-    age_text = _humanise_age(weather.last_updated, datetime.now(_tz(settings)))
+    age_text = _humanise_age(weather.last_updated, datetime.now(resolve_timezone(settings)))
     age_f = font(14)
     age_h = age_f.size
 
@@ -313,7 +306,7 @@ def _draw_hourly(
     draw_crisp_text(draw, (x, y), "Hourly forecast", head_f, fill=0)
     grid_top = y + FORECAST_LABEL_HEIGHT
 
-    tz = _tz(settings)
+    tz = resolve_timezone(settings)
     now_local = datetime.now(tz)
 
     hour_floor = now_local.replace(minute=0, second=0, microsecond=0)
@@ -393,7 +386,7 @@ def _draw_weekly(
     draw_crisp_text(draw, (x, y), "Weekly forecast", head_f, fill=0)
     grid_top = y + FORECAST_LABEL_HEIGHT
 
-    tz = _tz(settings)
+    tz = resolve_timezone(settings)
     today = datetime.now(tz).date()
 
     daily: list[tuple[ForecastEntry, datetime]] = []

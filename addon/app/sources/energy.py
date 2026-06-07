@@ -1,10 +1,11 @@
 """Energy / DSMR P1 source.
 
-Reads instantaneous values per phase (L1/L2/L3) for power produced,
-power consumed, voltage and current; the cumulative tariff and gas
-counters; and indoor temp/humidity. Also fetches a 24-hour history
-strip for the values that get sparklines on the energy page (L1
-power produced, L1 power consumed, L1 voltage, L1 current, indoor
+Single-phase, consumption-only model: this house only has L1 and no
+solar inverter, so we don't fan out per-phase or model production.
+Reads instantaneous L1 values for power consumed, voltage and current;
+the cumulative tariff and gas counters; and indoor temp/humidity. Also
+fetches a 24-hour history strip for the values that get sparklines on
+the energy page (L1 power consumed, L1 voltage, L1 current, indoor
 temp, indoor humidity).
 
 Follows the same shape as ``tesla.py`` / ``weather.py``:
@@ -37,28 +38,18 @@ HISTORY_HOURS = 24
 
 
 @dataclass
-class PhaseValues:
-    """Per-phase value triplet. Any field may be ``None`` if HA returns
-    no state for that phase (older meters often only report L1)."""
-
-    l1: float | None = None
-    l2: float | None = None
-    l3: float | None = None
-
-    def values(self) -> tuple[float | None, float | None, float | None]:
-        return (self.l1, self.l2, self.l3)
-
-
-@dataclass
 class EnergyState:
-    """Snapshot of P1 + indoor environment values for the energy page."""
+    """Snapshot of P1 + indoor environment values for the energy page.
 
-    # Instantaneous phase values. Power is in kW (DSMR/SlimmeLezer native unit);
+    All instantaneous fields refer to L1 only; this addon does not model
+    multi-phase or solar production.
+    """
+
+    # Instantaneous L1 values. Power is in kW (DSMR/SlimmeLezer native unit);
     # voltage in V; current in A.
-    power_produced: PhaseValues = field(default_factory=PhaseValues)
-    power_consumed: PhaseValues = field(default_factory=PhaseValues)
-    voltage: PhaseValues = field(default_factory=PhaseValues)
-    current: PhaseValues = field(default_factory=PhaseValues)
+    power_consumed: float | None = None
+    voltage: float | None = None
+    current: float | None = None
 
     # Cumulative counters (since meter install).
     energy_tariff1: float | None = None  # kWh consumed (low)
@@ -72,10 +63,9 @@ class EnergyState:
     # 24h history grids (length HISTORY_BUCKETS, oldest -> newest).
     # Each entry is a value in the same unit as the live field above, or
     # ``None`` for buckets where no value was available yet.
-    history_power_produced_l1: list[float | None] = field(default_factory=list)
-    history_power_consumed_l1: list[float | None] = field(default_factory=list)
-    history_voltage_l1: list[float | None] = field(default_factory=list)
-    history_current_l1: list[float | None] = field(default_factory=list)
+    history_power_consumed: list[float | None] = field(default_factory=list)
+    history_voltage: list[float | None] = field(default_factory=list)
+    history_current: list[float | None] = field(default_factory=list)
     history_indoor_temp: list[float | None] = field(default_factory=list)
     history_indoor_humidity: list[float | None] = field(default_factory=list)
 
@@ -162,26 +152,12 @@ def _bucket_history(
 def _fallback() -> EnergyState:
     """Synthesise believable demo data for offline dev rendering.
 
-    Builds a sunny-midday scenario: ~2.5 kW solar production peaking on L2,
-    modest household draw spread across phases, voltage hovering around
-    230 V, indoor at a comfortable 21 °C / 48 % rh.
+    Single-phase domestic load: baseload around 0.2 kW with morning and
+    evening cooking peaks, voltage drifting around 230 V, indoor at a
+    comfortable 21 °C / 48 % rh.
     """
-    # Live values — solar producing on L2, mixed consumption on the others.
-    power_consumed = PhaseValues(l1=0.180, l2=0.090, l3=0.130)  # kW
-    power_produced = PhaseValues(l1=0.0, l2=2.5, l3=0.0)
-    voltage = PhaseValues(l1=230.1, l2=231.5, l3=229.4)
-    current = PhaseValues(l1=0.78, l2=11.2, l3=0.57)
-
     n = HISTORY_BUCKETS
-    # Solar curve: 0 outside roughly 06:00-18:00 (buckets 24-72 of 96),
-    # half-sine peak ~2.5 kW around noon (bucket 48).
-    hist_prod: list[float | None] = []
-    for i in range(n):
-        if 24 <= i <= 72:
-            t = (i - 24) / 48  # 0..1 across daylight band
-            hist_prod.append(round(2.5 * math.sin(math.pi * t), 3))
-        else:
-            hist_prod.append(0.0)
+
     # Consumption: morning + evening peaks, baseload 0.2 kW.
     hist_cons: list[float | None] = [
         round(
@@ -199,19 +175,17 @@ def _fallback() -> EnergyState:
     hist_h: list[float | None] = [round(50 - 5 * math.sin((i - 36) / 18.0), 1) for i in range(n)]
 
     return EnergyState(
-        power_produced=power_produced,
-        power_consumed=power_consumed,
-        voltage=voltage,
-        current=current,
+        power_consumed=0.180,
+        voltage=230.1,
+        current=0.78,
         energy_tariff1=12345.6,
         energy_tariff2=7890.1,
         gas=2345.678,
         indoor_temp=21.3,
         indoor_humidity=48.0,
-        history_power_produced_l1=hist_prod,
-        history_power_consumed_l1=hist_cons,
-        history_voltage_l1=hist_v,
-        history_current_l1=hist_a,
+        history_power_consumed=hist_cons,
+        history_voltage=hist_v,
+        history_current=hist_a,
         history_indoor_temp=hist_t,
         history_indoor_humidity=hist_h,
     )
@@ -223,8 +197,8 @@ def fetch(settings: Settings) -> EnergyState:
     Strategy:
 
     1. One HA state call per configured entity for the live numbers
-       (~17 calls, but fast and parallel-friendly inside HA).
-    2. A single ``/api/history/period`` call for all six sparkline
+       (~8 calls now that we're single-phase + consumption-only).
+    2. A single ``/api/history/period`` call for all five sparkline
        entities at once (HA accepts a comma-separated list).
 
     Falls back to synthetic data if HA is unreachable or no live values
@@ -238,44 +212,26 @@ def fetch(settings: Settings) -> EnergyState:
 
     out = EnergyState()
 
-    # Per-phase live values. Each ``_read_state`` swallows errors and
+    # Live values (L1 only). Each ``_read_state`` swallows errors and
     # returns None, so partial data still renders gracefully.
-    out.power_produced = PhaseValues(
-        l1=_read_state(ha, settings.energy_power_produced_l1_entity),
-        l2=_read_state(ha, settings.energy_power_produced_l2_entity),
-        l3=_read_state(ha, settings.energy_power_produced_l3_entity),
-    )
-    out.power_consumed = PhaseValues(
-        l1=_read_state(ha, settings.energy_power_consumed_l1_entity),
-        l2=_read_state(ha, settings.energy_power_consumed_l2_entity),
-        l3=_read_state(ha, settings.energy_power_consumed_l3_entity),
-    )
-    out.voltage = PhaseValues(
-        l1=_read_state(ha, settings.energy_voltage_l1_entity),
-        l2=_read_state(ha, settings.energy_voltage_l2_entity),
-        l3=_read_state(ha, settings.energy_voltage_l3_entity),
-    )
-    out.current = PhaseValues(
-        l1=_read_state(ha, settings.energy_current_l1_entity),
-        l2=_read_state(ha, settings.energy_current_l2_entity),
-        l3=_read_state(ha, settings.energy_current_l3_entity),
-    )
+    out.power_consumed = _read_state(ha, settings.energy_power_consumed_l1_entity)
+    out.voltage = _read_state(ha, settings.energy_voltage_l1_entity)
+    out.current = _read_state(ha, settings.energy_current_l1_entity)
     out.energy_tariff1 = _read_state(ha, settings.energy_tariff1_entity)
     out.energy_tariff2 = _read_state(ha, settings.energy_tariff2_entity)
     out.gas = _read_state(ha, settings.energy_gas_entity)
     out.indoor_temp = _read_state(ha, settings.indoor_temp_entity)
     out.indoor_humidity = _read_state(ha, settings.indoor_humidity_entity)
 
-    # Fetch history for the six sparkline traces in a single HTTP call.
+    # Fetch history for the five sparkline traces in a single HTTP call.
     # We tolerate any of these being unconfigured (empty entity ID) by
     # excluding them and filling those histories with empty lists later.
     end = datetime.now(UTC)
     start = end - timedelta(hours=HISTORY_HOURS)
     history_targets: list[tuple[str, str]] = [
-        ("history_power_produced_l1", settings.energy_power_produced_l1_entity),
-        ("history_power_consumed_l1", settings.energy_power_consumed_l1_entity),
-        ("history_voltage_l1", settings.energy_voltage_l1_entity),
-        ("history_current_l1", settings.energy_current_l1_entity),
+        ("history_power_consumed", settings.energy_power_consumed_l1_entity),
+        ("history_voltage", settings.energy_voltage_l1_entity),
+        ("history_current", settings.energy_current_l1_entity),
         ("history_indoor_temp", settings.indoor_temp_entity),
         ("history_indoor_humidity", settings.indoor_humidity_entity),
     ]
@@ -294,10 +250,9 @@ def fetch(settings: Settings) -> EnergyState:
     has_any_live = any(
         v is not None
         for v in (
-            out.power_produced.l1,
-            out.power_consumed.l1,
-            out.voltage.l1,
-            out.current.l1,
+            out.power_consumed,
+            out.voltage,
+            out.current,
             out.energy_tariff1,
             out.indoor_temp,
         )
@@ -310,12 +265,10 @@ def fetch(settings: Settings) -> EnergyState:
         return _fallback()
 
     log.info(
-        "energy: P_prod_l1=%s P_cons_l1=%s V_l1=%s I_l1=%s T1=%s T2=%s gas=%s "
-        "indoor_t=%s indoor_h=%s histories=%d",
-        out.power_produced.l1,
-        out.power_consumed.l1,
-        out.voltage.l1,
-        out.current.l1,
+        "energy: P_cons=%s V=%s I=%s T1=%s T2=%s gas=%s indoor_t=%s indoor_h=%s histories=%d",
+        out.power_consumed,
+        out.voltage,
+        out.current,
         out.energy_tariff1,
         out.energy_tariff2,
         out.gas,
@@ -326,9 +279,7 @@ def fetch(settings: Settings) -> EnergyState:
     return out
 
 
-# Re-exported alias so callers don't need to import the fallback builder
-# directly when they want to know what the demo data looks like.
-__all__ = ["EnergyState", "PhaseValues", "fetch", "HISTORY_BUCKETS", "HISTORY_HOURS"]
+__all__ = ["EnergyState", "fetch", "HISTORY_BUCKETS", "HISTORY_HOURS"]
 
 # `Callable` is imported for type hints used by the page module — keeping
 # it imported here means downstream pages don't need their own import for

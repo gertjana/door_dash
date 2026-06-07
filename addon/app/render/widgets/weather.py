@@ -10,12 +10,12 @@ Layout (single row beneath the title):
 from __future__ import annotations
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw
 
 from ...config import Settings
 from ...sources.weather import Weather
+from ...timezone import resolve_timezone
 from ..fonts import draw_crisp_text, font
 from ..icons import draw_icon, icon_for_weather_state
 from .base import Box
@@ -28,11 +28,7 @@ def _fmt_temp(t, unit: str = "°") -> str:
 
 
 def _today(settings: Settings) -> datetime.date:
-    try:
-        tz = ZoneInfo(settings.timezone)
-    except Exception:
-        tz = ZoneInfo("UTC")
-    return datetime.now(tz).date()
+    return datetime.now(resolve_timezone(settings)).date()
 
 
 def render(weather: Weather, img: Image.Image, box: Box, settings: Settings | None = None) -> None:

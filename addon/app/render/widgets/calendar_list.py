@@ -23,6 +23,7 @@ from PIL import Image, ImageDraw
 
 from ...config import Settings
 from ...sources.calendar import Event
+from ...timezone import resolve_timezone
 from ..fonts import draw_crisp_text, font
 from .base import Box
 
@@ -112,10 +113,7 @@ def render(settings: Settings, events: list[Event], img: Image.Image, box: Box) 
         draw.text((box.x + 12, box.y + 48), "No upcoming events.", font=font(16), fill=0)
         return
 
-    try:
-        tz = ZoneInfo(settings.timezone)
-    except Exception:
-        tz = ZoneInfo("UTC")
+    tz = resolve_timezone(settings)
     now = datetime.now(UTC)
 
     date_f = font(15, bold=True)

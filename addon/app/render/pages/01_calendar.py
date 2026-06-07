@@ -31,6 +31,7 @@ from zoneinfo import ZoneInfo
 from PIL import Image, ImageDraw
 
 from ...sources.calendar import Event, fetch_range
+from ...timezone import resolve_timezone
 from ..badge import draw_version_badge
 from ..fonts import draw_crisp_text, font
 
@@ -145,10 +146,7 @@ def render(
     # Resolve "today" in the configured timezone so the grid centres on
     # the right month and "today" is highlighted correctly across the
     # midnight rollover regardless of UTC vs. local.
-    try:
-        tz = ZoneInfo(settings.timezone)
-    except Exception:
-        tz = UTC  # type: ignore[assignment]
+    tz = resolve_timezone(settings)
     today_local = datetime.now(tz).date()
     year, month = today_local.year, today_local.month
 
