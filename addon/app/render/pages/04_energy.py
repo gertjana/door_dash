@@ -269,13 +269,15 @@ def _draw_sparkline_with_axes(
     # collide with it.
     if rng is not None:
         y_min, y_max = rng
-        for value, y_pos in (
-            (y_max, plot.y + AXIS_Y_TOP_INSET),
-            (y_min, plot.y + plot.h - AXIS_LABEL_PT - AXIS_Y_BOTTOM_INSET),
+        for value, y_anchor, is_bottom in (
+            (y_max, plot.y + AXIS_Y_TOP_INSET, False),
+            (y_min, plot.y + plot.h - AXIS_Y_BOTTOM_INSET, True),
         ):
             text = y_fmt(value)
             tb = draw.textbbox((0, 0), text, font=label_f)
             tw = tb[2] - tb[0]
+            th = tb[3] - tb[1]
+            y_pos = y_anchor - th if is_bottom else y_anchor
             draw_crisp_text(
                 draw,
                 (plot.x - AXIS_Y_LABEL_GAP - tw, y_pos),
