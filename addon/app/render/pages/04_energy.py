@@ -2,30 +2,45 @@
 
 Three top-to-bottom sections:
 
-  1. Phase table — 4 rows × (label + L1 + L2 + L3 + 24h sparkline)
-       Power Produced (kW)
-       Power Consumed (kW)
-       Voltage        (V)
-       Current        (A)
-       The sparkline column shows the L1 trace only (matches the
-       original spec); per-phase values still appear as numbers.
+  1. Phase table — 3 rows × (label + L1 value + 24h sparkline with axes):
+       Consumed (kW)
+       Voltage  (V)
+       Current  (A)
+     Single-phase install, so no L2/L3 columns. Solar production is also
+     omitted; reinstate when/if the install grows.
 
-  2. Indoor row — Temperature + Humidity, big number plus 24h sparkline.
+  2. Indoor row — Temperature + Humidity, big number plus 24h sparkline
+     (also axis-labelled).
 
   3. Totals row — cumulative Tariff 1, Tariff 2, Gas counters.
 
-All data comes from a single ``sources.energy.fetch`` call. No widgets
-are reused; the layout is dense enough that bespoke drawing code is
-clearer than parameterising existing widgets to handle a 4-column table.
+All sparklines carry small axis labels:
+
+  * Y-axis: y-min bottom-left and y-max top-left of the plot box, in
+    the same numeric scale draw_sparkline actually mapped to. The unit
+    is implied by the row label; numbers are unitless to keep the font
+    small enough not to compete with the trace.
+  * X-axis: 24h-ago / 12h-ago / "now", rendered as ``HH:MM`` in the
+    user's configured timezone. Labels reflect *current* clock time
+    (a label of "14:30" means the leftmost sample was taken at 14:30
+    yesterday), which is more honest than fixed midnight/noon ticks
+    when the panel can refresh at any time of day.
+
+All data comes from a single ``sources.energy.fetch`` call. Layout is
+bespoke (not widget-based) — the table is dense enough that
+parameterising existing widgets to handle the axis-labelled cells is
+more code than just drawing it directly.
 """  # noqa: N999
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageDraw
 
 from ...sources import energy as energy_src
+from ...timezone import resolve_timezone
 from ..badge import draw_version_badge
 from ..fonts import draw_crisp_text, font
 from ..sparkline import draw_sparkline
@@ -35,52 +50,60 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from ...config import Settings
-    from ...sources.energy import EnergyState, PhaseValues
+    from ...sources.energy import EnergyState
     from ...sources.local_sensors import LocalSensors
 
 TITLE = "Energy"
 
 # === Layout constants =====================================================
-# All vertical sums must fit within settings.height (480 on the E1001).
-# Total budget below: 12 + 28 + 232 + 12 + 1 + 12 + 102 + 12 + 1 + 12 + 64 = 488,
-# but the totals section drops to ~46 px in practice (small label + one big
-# value) so we land at ~470, leaving a few px of breathing room above the
-# bottom edge.
+# Vertical budget on a 480 px panel:
+#   12 (top inset)
+# + 28 (page title)
+# + 22 + 3*62 (phase table: header + 3 rows) = 208
+# + 10 + 1 + 10 (gap, rule, gap)             = 21
+# + 22 + 2*44 (indoor: header + 2 rows)      = 110
+# + 10 + 1 + 10 (gap, rule, gap)             = 21
+# + 22 + 42 (totals: header + body)          = 64
+# = 464, leaving ~16 px breathing room above the bottom edge.
 SIDE_INSET = 20
 TOP_INSET = 12
 
 # Page header
 PAGE_TITLE_H = 28
 
-# Phase table
+# Phase table — single-phase, so just one numeric column next to the
+# label, with a generous sparkline cell on the right.
 TABLE_HEADER_H = 22
-TABLE_ROW_H = 50
-TABLE_LABEL_W = 100
-TABLE_PHASE_W = 84  # each of L1, L2, L3
-SPARK_INSET = 6  # padding around sparkline within its cell
+TABLE_ROW_H = 62
+TABLE_LABEL_W = 110
+TABLE_VALUE_W = 110
+SPARK_INSET = 4  # padding above the plot inside its cell
 
 # Indoor section
 INDOOR_HEADER_H = 22
-INDOOR_ROW_H = 38
+INDOOR_ROW_H = 44
 INDOOR_LABEL_W = 110
-INDOOR_VALUE_W = 130
+INDOOR_VALUE_W = 110
 
 # Totals section
 TOTALS_HEADER_H = 22
 TOTALS_BODY_H = 42
 
+# Axis label gutters inside a sparkline cell. Y-labels sit in a column
+# at the left of the cell; X-labels sit on a row below the plot. Both
+# are rendered at font(11) which is ~8-9 px cap-height + 2-3 px descender.
+AXIS_Y_W = 30
+AXIS_X_H = 12
+AXIS_LABEL_PT = 11
+
 # Vertical gap between sections (top + horizontal rule + bottom).
 SECTION_GAP = 10
 
 
-# === Formatters ===========================================================
-# Each value column is ~84 px wide at font(16, bold=True), so we cap each
-# string to ~7-8 characters for safety. Format chosen per quantity:
-#   power: small in W (no decimals), large in kW (2 decimals)
-#   voltage: 1 decimal V
-#   current: 2 decimals A
-#   energy: 1 decimal kWh, thousands separator
-#   gas: 3 decimals m³ (smart meters report mm³ resolution)
+# === Value formatters =====================================================
+# These format full strings with units for the big numeric value cells.
+# Each value column is ~110 px wide at font(16, bold=True), leaving
+# headroom for "12,345 W" (8 chars) without truncation.
 
 
 def _fmt_power(v: float | None) -> str:
@@ -88,8 +111,8 @@ def _fmt_power(v: float | None) -> str:
     if v is None:
         return "—"
     watts = v * 1000.0
-    # Break point at 10 kW: residential phases very rarely exceed this even
-    # when EV-charging on three phases, so the W form is the dominant case.
+    # Break point at 10 kW: residential single-phase very rarely exceeds
+    # this even when EV-charging, so the W form is the dominant case.
     if abs(watts) >= 10_000:
         return f"{v:.2f} kW"
     return f"{watts:,.0f} W"
@@ -131,6 +154,143 @@ def _fmt_pct(v: float | None) -> str:
     return f"{round(v)} %"
 
 
+# === Axis label formatters ================================================
+# Same numeric conventions as the value formatters but without units, so
+# the small axis labels read as bare numbers. Unit context comes from the
+# row label ("Consumed" → kW, "Voltage" → V, etc.).
+
+
+def _axis_power(v: float) -> str:
+    """kW input -> bare number (W if small, kW if ≥10 kW)."""
+    watts = v * 1000.0
+    if abs(watts) >= 10_000:
+        return f"{v:.1f}k"
+    return f"{watts:,.0f}"
+
+
+def _axis_voltage(v: float) -> str:
+    return f"{v:.1f}"
+
+
+def _axis_current(v: float) -> str:
+    return f"{v:.2f}"
+
+
+def _axis_temp(v: float) -> str:
+    return f"{v:.1f}"
+
+
+def _axis_pct(v: float) -> str:
+    return f"{round(v)}"
+
+
+# === Time helpers =========================================================
+
+
+def _x_labels(settings: Settings) -> tuple[str, str, str]:
+    """Return (24h-ago, 12h-ago, "now") clock-time labels for the x-axis.
+
+    Times are formatted ``HH:MM`` in the resolved timezone (HA's
+    ``/api/config`` if available, falling back to the addon option).
+    The third label is a literal "now" rather than the current time,
+    since showing a clock would invite the reader to verify it against
+    actual now and the panel only refreshes every few minutes.
+    """
+    tz = resolve_timezone(settings)
+    now = datetime.now(tz)
+    return (
+        (now - timedelta(hours=24)).strftime("%H:%M"),
+        (now - timedelta(hours=12)).strftime("%H:%M"),
+        "now",
+    )
+
+
+# === Sparkline cell with axis labels ======================================
+
+
+def _draw_sparkline_with_axes(
+    img: Image.Image,
+    draw: ImageDraw.ImageDraw,
+    cell: Box,
+    points: list[float | None],
+    *,
+    include_zero: bool,
+    y_fmt: Callable[[float], str],
+    x_labels: tuple[str, str, str],
+    top_inset: int = SPARK_INSET,
+) -> None:
+    """Draw a sparkline inside ``cell`` with y-axis labels on the left
+    and x-axis labels along the bottom.
+
+    The plot itself goes into a sub-box of ``cell`` that excludes the
+    label gutters, so the trace never touches the labels. ``y_fmt``
+    formats the y-min/y-max labels (no units). ``x_labels`` is
+    ``(left, mid, right)`` already-formatted strings.
+
+    When the sparkline reports no usable data range (entity unconfigured
+    or all-None history), we skip the y-labels but still render the
+    x-labels — the time axis is meaningful regardless.
+    """
+    plot = Box(
+        x=cell.x + AXIS_Y_W + 2,
+        y=cell.y + top_inset,
+        w=max(1, cell.w - AXIS_Y_W - 4),
+        h=max(1, cell.h - top_inset - AXIS_X_H - 1),
+    )
+    rng = draw_sparkline(img, plot, points, include_zero=include_zero)
+
+    label_f = font(AXIS_LABEL_PT)
+
+    # Y-axis labels (top-left = max, bottom-left = min). These sit in
+    # the AXIS_Y_W column to the left of the plot. Right-align them
+    # against the plot edge so multi-digit and single-digit values
+    # don't visually drift apart in adjacent rows.
+    if rng is not None:
+        y_min, y_max = rng
+        for value, y_pos in (
+            (y_max, plot.y),
+            (y_min, plot.y + plot.h - AXIS_LABEL_PT),
+        ):
+            text = y_fmt(value)
+            tb = draw.textbbox((0, 0), text, font=label_f)
+            tw = tb[2] - tb[0]
+            draw_crisp_text(
+                draw,
+                (plot.x - 2 - tw, y_pos),
+                text,
+                label_f,
+                fill=0,
+            )
+
+    # X-axis labels along the bottom: left-aligned start, centred mid,
+    # right-aligned end. Always drawn so the page reads as a chart even
+    # when there's no data yet.
+    left_lbl, mid_lbl, right_lbl = x_labels
+    label_y = plot.y + plot.h + 2
+
+    draw_crisp_text(draw, (plot.x, label_y), left_lbl, label_f, fill=0)
+
+    mid_bb = draw.textbbox((0, 0), mid_lbl, font=label_f)
+    mid_w = mid_bb[2] - mid_bb[0]
+    draw_crisp_text(
+        draw,
+        (plot.x + (plot.w - mid_w) // 2, label_y),
+        mid_lbl,
+        label_f,
+        fill=0,
+    )
+
+    right_bb = draw.textbbox((0, 0), right_lbl, font=label_f)
+    right_w = right_bb[2] - right_bb[0]
+    draw_crisp_text(
+        draw,
+        (plot.x + plot.w - right_w, label_y),
+        right_lbl,
+        label_f,
+        fill=0,
+    )
+
+
 # === Section drawers ======================================================
 
 
@@ -151,36 +311,34 @@ def _draw_phase_table(
     x: int,
     y: int,
     w: int,
+    x_labels: tuple[str, str, str],
 ) -> int:
-    """Draw the 4-row × (label + L1 + L2 + L3 + 24h graph) table.
+    """Draw the 3-row × (label + value + 24h graph) table.
 
-    Returns the y-coordinate just below the bottom border.
+    Returns the y-coordinate just below the bottom border so the caller
+    can stack the next section under it without recomputing offsets.
     """
     label_x = x
-    l1_x = x + TABLE_LABEL_W
-    l2_x = l1_x + TABLE_PHASE_W
-    l3_x = l2_x + TABLE_PHASE_W
-    graph_x = l3_x + TABLE_PHASE_W
+    value_x = x + TABLE_LABEL_W
+    graph_x = value_x + TABLE_VALUE_W
     graph_w = max(0, w - (graph_x - x))
 
     # === Header row =======================================================
     head_f = font(13, bold=True)
     head_baseline = y + (TABLE_HEADER_H - 13) // 2
 
-    for col_x, col_w, label in (
-        (l1_x, TABLE_PHASE_W, "L1"),
-        (l2_x, TABLE_PHASE_W, "L2"),
-        (l3_x, TABLE_PHASE_W, "L3"),
-    ):
-        bbox = draw.textbbox((0, 0), label, font=head_f)
-        tw = bbox[2] - bbox[0]
-        draw_crisp_text(
-            draw,
-            (col_x + (col_w - tw) // 2, head_baseline),
-            label,
-            head_f,
-            fill=0,
-        )
+    # Single-phase, so the value column header is just "L1" — gives the
+    # reader the same visual signpost as the old multi-phase layout
+    # ("which leg is this?") in case the install ever grows.
+    bbox = draw.textbbox((0, 0), "L1", font=head_f)
+    tw = bbox[2] - bbox[0]
+    draw_crisp_text(
+        draw,
+        (value_x + (TABLE_VALUE_W - tw) // 2, head_baseline),
+        "L1",
+        head_f,
+        fill=0,
+    )
 
     graph_label = "Last 24 h"
     bbox = draw.textbbox((0, 0), graph_label, font=head_f)
@@ -201,12 +359,41 @@ def _draw_phase_table(
     )
 
     # === Data rows ========================================================
-    # (label, phase-values, history, include_zero, formatter)
-    rows: list[tuple[str, PhaseValues, list[float | None], bool, Callable[[float | None], str]]] = [
-        ("Produced", state.power_produced, state.history_power_produced_l1, True, _fmt_power),
-        ("Consumed", state.power_consumed, state.history_power_consumed_l1, True, _fmt_power),
-        ("Voltage", state.voltage, state.history_voltage_l1, False, _fmt_voltage),
-        ("Current", state.current, state.history_current_l1, True, _fmt_current),
+    # (label, value, history, include_zero, value_fmt, axis_fmt)
+    rows: list[
+        tuple[
+            str,
+            float | None,
+            list[float | None],
+            bool,
+            Callable[[float | None], str],
+            Callable[[float], str],
+        ]
+    ] = [
+        (
+            "Consumed",
+            state.power_consumed,
+            state.history_power_consumed,
+            True,
+            _fmt_power,
+            _axis_power,
+        ),
+        (
+            "Voltage",
+            state.voltage,
+            state.history_voltage,
+            False,
+            _fmt_voltage,
+            _axis_voltage,
+        ),
+        (
+            "Current",
+            state.current,
+            state.history_current,
+            True,
+            _fmt_current,
+            _axis_current,
+        ),
     ]
 
     label_f = font(15, bold=True)
@@ -214,7 +401,7 @@ def _draw_phase_table(
 
     row_top = y + TABLE_HEADER_H
 
-    for i, (label, vals, hist, include_zero, fmt) in enumerate(rows):
+    for i, (label, value, hist, include_zero, val_fmt, ax_fmt) in enumerate(rows):
         ry = row_top + i * TABLE_ROW_H
 
         # Row label (left-aligned, vertically centred).
@@ -227,31 +414,34 @@ def _draw_phase_table(
             fill=0,
         )
 
-        # L1 / L2 / L3 numeric values (centred per column).
-        for col_x, col_w, v in (
-            (l1_x, TABLE_PHASE_W, vals.l1),
-            (l2_x, TABLE_PHASE_W, vals.l2),
-            (l3_x, TABLE_PHASE_W, vals.l3),
-        ):
-            text = fmt(v)
-            tb = draw.textbbox((0, 0), text, font=value_f)
-            tw = tb[2] - tb[0]
-            th = tb[3] - tb[1]
-            draw.text(
-                (col_x + (col_w - tw) // 2, ry + (TABLE_ROW_H - th) // 2 - 1),
-                text,
-                font=value_f,
-                fill=0,
-            )
-
-        # Sparkline cell (L1 trace).
-        sb = Box(
-            x=graph_x + SPARK_INSET,
-            y=ry + SPARK_INSET,
-            w=max(1, graph_w - 2 * SPARK_INSET),
-            h=max(1, TABLE_ROW_H - 2 * SPARK_INSET),
+        # L1 numeric value (centred in its column).
+        text = val_fmt(value)
+        tb = draw.textbbox((0, 0), text, font=value_f)
+        tw = tb[2] - tb[0]
+        th = tb[3] - tb[1]
+        draw.text(
+            (value_x + (TABLE_VALUE_W - tw) // 2, ry + (TABLE_ROW_H - th) // 2 - 1),
+            text,
+            font=value_f,
+            fill=0,
         )
-        draw_sparkline(img, sb, hist, include_zero=include_zero)
+
+        # Sparkline cell with axis labels.
+        cell = Box(
+            x=graph_x,
+            y=ry,
+            w=graph_w,
+            h=TABLE_ROW_H,
+        )
+        _draw_sparkline_with_axes(
+            img,
+            draw,
+            cell,
+            hist,
+            include_zero=include_zero,
+            y_fmt=ax_fmt,
+            x_labels=x_labels,
+        )
 
         # Inter-row separator (skip after the last row — bottom border
         # is drawn as a single rule below).
@@ -269,7 +459,7 @@ def _draw_phase_table(
 
     # Vertical separators between columns (start below the header underline
     # so we don't double up on that line).
-    for sep_x in (l1_x, l2_x, l3_x, graph_x):
+    for sep_x in (value_x, graph_x):
         draw.line((sep_x, table_top, sep_x, table_bot), fill=0, width=1)
 
     return table_bot
@@ -282,15 +472,33 @@ def _draw_indoor(
     x: int,
     y: int,
     w: int,
+    x_labels: tuple[str, str, str],
 ) -> int:
     """Indoor temperature + humidity rows with 24h sparklines."""
     head_f = font(15, bold=True)
     draw_crisp_text(draw, (x, y), "Indoor", head_f, fill=0)
     body_top = y + INDOOR_HEADER_H
 
-    rows: list[tuple[str, str, list[float | None]]] = [
-        ("Temperature", _fmt_temp(state.indoor_temp), state.history_indoor_temp),
-        ("Humidity", _fmt_pct(state.indoor_humidity), state.history_indoor_humidity),
+    rows: list[
+        tuple[
+            str,
+            str,
+            list[float | None],
+            Callable[[float], str],
+        ]
+    ] = [
+        (
+            "Temperature",
+            _fmt_temp(state.indoor_temp),
+            state.history_indoor_temp,
+            _axis_temp,
+        ),
+        (
+            "Humidity",
+            _fmt_pct(state.indoor_humidity),
+            state.history_indoor_humidity,
+            _axis_pct,
+        ),
     ]
 
     label_f = font(13)
@@ -299,7 +507,7 @@ def _draw_indoor(
     graph_x = x + INDOOR_LABEL_W + INDOOR_VALUE_W + 12
     graph_w = max(1, w - (graph_x - x))
 
-    for i, (label, value, hist) in enumerate(rows):
+    for i, (label, value, hist, ax_fmt) in enumerate(rows):
         ry = body_top + i * INDOOR_ROW_H
 
         # Label (left).
@@ -327,9 +535,20 @@ def _draw_indoor(
             fill=0,
         )
 
-        # Sparkline (auto-scale; indoor swings are small so 0 is uninteresting).
-        sb = Box(x=graph_x, y=ry + 4, w=graph_w, h=INDOOR_ROW_H - 8)
-        draw_sparkline(img, sb, hist, include_zero=False)
+        # Sparkline cell with axis labels. Indoor swings are small so
+        # auto-scale (include_zero=False) — zero is uninteresting for
+        # both temp and humidity.
+        cell = Box(x=graph_x, y=ry, w=graph_w, h=INDOOR_ROW_H)
+        _draw_sparkline_with_axes(
+            img,
+            draw,
+            cell,
+            hist,
+            include_zero=False,
+            y_fmt=ax_fmt,
+            x_labels=x_labels,
+            top_inset=2,
+        )
 
     return body_top + len(rows) * INDOOR_ROW_H
 
@@ -397,6 +616,7 @@ def render(
     draw = ImageDraw.Draw(img)
 
     state = energy_src.fetch(settings)
+    x_labels = _x_labels(settings)
 
     inset_x = SIDE_INSET
     avail_w = w - 2 * SIDE_INSET
@@ -407,8 +627,8 @@ def render(
     _draw_page_title(draw, inset_x, cy)
     cy += PAGE_TITLE_H
 
-    # Section 1: phase table.
-    cy = _draw_phase_table(draw, img, state, inset_x, cy, avail_w)
+    # Section 1: phase table (single-phase consumption stats).
+    cy = _draw_phase_table(draw, img, state, inset_x, cy, avail_w, x_labels)
     cy += SECTION_GAP
 
     # Horizontal rule between sections — keeps the dense page from feeling
@@ -417,7 +637,7 @@ def render(
     cy += SECTION_GAP
 
     # Section 2: indoor temp + humidity.
-    cy = _draw_indoor(draw, img, state, inset_x, cy, avail_w)
+    cy = _draw_indoor(draw, img, state, inset_x, cy, avail_w, x_labels)
     cy += SECTION_GAP
 
     draw.line((inset_x, cy, inset_x + avail_w, cy), fill=0, width=1)

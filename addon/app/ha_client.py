@@ -19,6 +19,11 @@ class HAClient:
         self.settings = settings
         self.base = settings.ha_base_url.rstrip("/")
         self.token = settings.supervisor_token
+        # Per-instance cache for /api/config. Multiple callers within one
+        # render pass (e.g. timezone resolver hit by every page) end up
+        # hammering this otherwise. Cross-instance caching is the
+        # responsibility of higher-level helpers (app.timezone).
+        self._config_cache: dict | None = None
 
     @property
     def available(self) -> bool:
@@ -29,6 +34,29 @@ class HAClient:
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
         }
+
+    def get_config(self) -> dict | None:
+        """Fetch HA's ``/api/config`` payload (timezone, lat/lon, version,
+        unit_system, ...).
+
+        Cached on the instance; subsequent calls within one HAClient's
+        lifetime return the same dict without another HTTP roundtrip.
+        Returns ``None`` when HA is unreachable or the request failed —
+        callers should treat that as "use my own fallback".
+        """
+        if not self.available:
+            return None
+        if self._config_cache is not None:
+            return self._config_cache
+        url = f"{self.base}/api/config"
+        try:
+            r = httpx.get(url, headers=self._headers(), timeout=8.0)
+            if r.status_code == 200:
+                self._config_cache = r.json()
+                return self._config_cache
+        except httpx.HTTPError:
+            return None
+        return None
 
     def get_state(self, entity_id: str) -> dict | None:
         if not self.available:

@@ -47,7 +47,7 @@ def draw_sparkline(
     fill: int = 0,
     include_zero: bool = False,
     show_baseline: bool = True,
-) -> None:
+) -> tuple[float, float] | None:
     """Draw ``points`` as a polyline inside ``box`` (in place).
 
     Args:
@@ -63,12 +63,19 @@ def draw_sparkline(
             than ``_MIN_TRACE_POINTS`` valid samples are present, so that
             a freshly-deployed entity (with only 1-2 buckets of recorded
             history) doesn't look like a finished flat-line chart.
+
+    Returns:
+        ``(y_min, y_max)`` of the actual y-axis range used for plotting,
+        post-``include_zero`` clamping, so the caller can render axis
+        labels matching what's drawn. ``None`` when the cell was too
+        small or no valid data was available — the caller should skip
+        labelling in that case rather than print "0 / 0".
     """
     draw = ImageDraw.Draw(img)
     x0, y0 = box.x, box.y
     w, h = box.w, box.h
     if w <= 1 or h <= 1:
-        return
+        return None
 
     valid = [p for p in points if p is not None]
     has_meaningful_trace = len(valid) >= _MIN_TRACE_POINTS
@@ -88,7 +95,7 @@ def draw_sparkline(
         midy = y0 + h // 2
         for dx in range(0, w, 4):
             draw.point((x0 + dx, midy), fill=fill)
-        return
+        return None
 
     y_min = min(valid)
     y_max = max(valid)
@@ -99,7 +106,8 @@ def draw_sparkline(
     # Constant-series special case (e.g. voltage flat-lined at 230.0).
     # Auto-scaling would map the single value to the bottom edge by
     # convention; centring it is more useful and clearly says "no
-    # variation in this window".
+    # variation in this window". We still return the value so the caller
+    # can label "229.4 / 229.4" and the user sees the absolute level.
     if y_max <= y_min:
         flat_y = y0 + h // 2
         n = len(points)
@@ -114,7 +122,7 @@ def draw_sparkline(
             else:
                 draw.line((prev_xy[0], prev_xy[1], x, flat_y), fill=fill, width=1)
             prev_xy = (x, flat_y)
-        return
+        return (y_min, y_max)
 
     span = y_max - y_min
     pad = 1  # 1-px margin top + bottom so the line doesn't touch the box edge
@@ -140,6 +148,8 @@ def draw_sparkline(
         else:
             draw.line((prev_xy[0], prev_xy[1], x, y), fill=fill, width=1)
         prev_xy = (x, y)
+
+    return (y_min, y_max)
 
 
 __all__ = ["draw_sparkline"]
