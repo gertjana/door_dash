@@ -483,6 +483,6 @@ def render(
     _draw_weekly(draw, weather, settings, x, cursor_y, avail_w, weekly_h)
 
     # Version badge in the top-right corner (shared helper).
-    draw_version_badge(img, settings, fw_version, draw=draw)
+    draw_version_badge(img, settings, fw_version, battery_pct=sensors.battery_pct, draw=draw)
 
     return img

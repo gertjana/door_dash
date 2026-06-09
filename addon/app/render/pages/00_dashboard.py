@@ -179,6 +179,6 @@ def render(
     _draw_footer_timestamp(drw, settings, left_widget_h)
 
     # Tiny version badge in the top-right corner: "v0.1.0 · fw0.1.0".
-    draw_version_badge(img, settings, fw_version, draw=drw)
+    draw_version_badge(img, settings, fw_version, battery_pct=sensors.battery_pct, draw=drw)
 
     return img

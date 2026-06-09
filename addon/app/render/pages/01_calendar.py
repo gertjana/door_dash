@@ -309,6 +309,6 @@ def render(
     # user's "bold day number only" preference).
 
     # Version badge in the top-right corner (shared helper).
-    draw_version_badge(img, settings, fw_version, draw=draw)
+    draw_version_badge(img, settings, fw_version, battery_pct=sensors.battery_pct, draw=draw)
 
     return img

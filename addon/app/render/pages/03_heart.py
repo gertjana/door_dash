@@ -112,6 +112,6 @@ def render(
     draw.text((prompt_x, prompt_y), PROMPT, font=prompt_f, fill=0)
 
     # Tiny version badge in the top-right corner, same as the other pages.
-    draw_version_badge(img, settings, fw_version, draw=draw)
+    draw_version_badge(img, settings, fw_version, battery_pct=sensors.battery_pct, draw=draw)
 
     return img

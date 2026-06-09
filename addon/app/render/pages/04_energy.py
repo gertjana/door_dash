@@ -630,7 +630,7 @@ def _draw_totals(
 
 def render(
     settings: Settings,
-    sensors: LocalSensors,  # noqa: ARG001 — page contract; unused on this page
+    sensors: LocalSensors,
     fw_version: str | None = None,
 ) -> Image.Image:
     """Compose the energy page. Returns a PIL ``L``-mode (8-bit grey) image
@@ -672,6 +672,6 @@ def render(
     _draw_totals(draw, state, inset_x, cy, avail_w)
 
     # Tiny version badge in the top-right corner: matches the other pages.
-    draw_version_badge(img, settings, fw_version, draw=draw)
+    draw_version_badge(img, settings, fw_version, battery_pct=sensors.battery_pct, draw=draw)
 
     return img
