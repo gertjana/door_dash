@@ -1,0 +1,29 @@
+# Overrides applied by scripts/build_addon_tarball.sh on top of
+# addon/config.yaml when packing the dev tarball.
+#
+# Only list the keys that should differ from the released add-on;
+# everything else is deep-merged from addon/config.yaml so a single
+# bump of `version:` there continues to flow through to both the
+# GitHub-installed release and the locally-unpacked dev variant.
+#
+# The merged tarball is meant to coexist with the GitHub-installed
+# release on the same Home Assistant host:
+#   * distinct `slug` so the Supervisor treats it as a separate
+#     add-on (no install collision)
+#   * distinct host port so both can serve images on the LAN
+#     simultaneously (firmware still hits :8099, dev variant on :8100
+#     is reachable via browser/curl for side-by-side comparison)
+#   * "(dev)" suffix on the name for at-a-glance recognition in the
+#     add-ons list
+
+name: ePaper Dashboard (dev)
+slug: epaper_dashboard_dev
+description: Dev build of the ePaper Dashboard, runs alongside the release
+ports:
+  "8099/tcp": 8100
+ports_description:
+  "8099/tcp": Dashboard image endpoint (LAN, dev port)
+version: "1.1.0-dev"
+# Optionally override the version too, e.g. to mark dev builds:
+#   version: "1.0.9-dev"
+# Left unset so the dev variant inherits whatever's in addon/config.yaml.

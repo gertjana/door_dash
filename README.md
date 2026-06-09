@@ -100,6 +100,62 @@ all that's needed. The Supervisor polls the repository and surfaces
 an **Update** button in the UI; the changelog section for the new
 version is shown in the update dialog.
 
+### Running a dev build alongside the release
+
+The repo can also produce a *dev* tarball that installs as a
+**second** add-on on the same Home Assistant host, on a different
+host port, with a `(dev)` suffix in the UI. The release add-on
+keeps tracking `main` from GitHub; the dev add-on is whatever you
+unpack into `/addons/` locally. Both run at the same time, so you
+can A/B-compare a feature branch against the published version
+without breaking the firmware's image fetches.
+
+The trick is a thin layer of overrides:
+
+| File | Purpose |
+|------|---------|
+| `addon/config.yaml`, `addon/build.json` | Canonical source. The release flow ships this as-is. |
+| `dev/config-override.yaml` | Keys that differ for the dev variant: `name`, `slug`, `description`, `ports` (host port `8100` instead of `8099`). |
+| `dev/build-override.json` | Optional `build.json` overrides (just the name/description by default). |
+| `scripts/build_addon_tarball.sh` | Deep-merges the overrides on top of the addon sources at pack time and writes `dist/<merged-slug>.tar.gz`. |
+| `scripts/_merge_addon_config.py` | YAML/JSON deep-merge helper used by the build script. |
+
+Because the overrides only patch fields, bumping `version:` in
+`addon/config.yaml` still flows through to the dev build with no
+extra ceremony — the GitHub-driven release update keeps working
+exactly as advertised above.
+
+#### Build & deploy the dev tarball
+
+```bash
+# Build (overrides are auto-detected from dev/)
+scripts/build_addon_tarball.sh
+# -> dist/epaper_dashboard_dev.tar.gz
+
+# Push to the HA host
+scp dist/epaper_dashboard_dev.tar.gz root@<ha-host>:/tmp/
+ssh root@<ha-host> '
+    rm -rf /addons/epaper_dashboard_dev &&
+    mkdir -p /addons/epaper_dashboard_dev &&
+    tar -xzf /tmp/epaper_dashboard_dev.tar.gz -C /addons/epaper_dashboard_dev
+'
+```
+
+Then in Home Assistant: **Settings → Add-ons → Store → ⋮ →
+Check for updates**. The dev add-on appears under **Local
+add-ons** as **ePaper Dashboard (dev)**. Install, configure, and
+start it just like the release add-on. It binds host port `8100`
+(`http://<ha-ip>:8100/dashboard.bmp`) so the firmware on `:8099`
+keeps hitting the released version untouched.
+
+To force a vanilla release tarball (e.g. for an air-gapped HA install
+that can't reach `github.com`):
+
+```bash
+scripts/build_addon_tarball.sh --no-overrides
+# -> dist/epaper_dashboard.tar.gz
+```
+
 ### Rendering notes
 
 The display is 1-bit. The renderer threshold-converts (no dithering) and uses
