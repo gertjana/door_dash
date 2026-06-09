@@ -4,6 +4,20 @@ All notable changes to the **ePaper Dashboard** add-on are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## 1.2.0 - 2026-06-09
+
+### Added
+- Display battery percentage now appears in the top-right version badge
+  on every page (small icon + label, e.g. `■ 87%  v1.2.0 · fw0.3.0`),
+  giving a single source of truth for charge state regardless of which
+  page is showing.
+
+### Changed
+- **Indoors** widget on the dashboard page slimmed down to just the
+  Temp/Humidity readings — the redundant battery bar has moved to the
+  badge. The freed pixels in the left column are absorbed by the QR and
+  Tesla widgets for a slightly more spacious layout.
+
 ## 1.1.0 - 2026-06-07
 
 ### Added

@@ -81,7 +81,7 @@ def draw_version_badge(
 
     # Battery indicator dimensions
     bat_bar_w = 14
-    bat_bar_h = 7
+    bat_bar_h = 10
     bat_nub_w = 2
     bat_gap = 3  # gap between battery section and version text
     bat_section_w = 0
@@ -103,7 +103,9 @@ def draw_version_badge(
 
     # Draw battery bar + percentage if available
     if battery_pct is not None:
-        bat_y = y + (text_h - bat_bar_h) // 2
+        # Top-aligned with the text baseline; the 2px white pad above
+        # provides the visual breathing room from the canvas edge.
+        bat_y = y
         _draw_mini_battery(draw, x, bat_y, bat_bar_w, bat_bar_h, battery_pct)
         pct_x = x + bat_bar_w + bat_nub_w + 2
         draw_crisp_text(draw, (pct_x, y), pct_label, f, fill=0)

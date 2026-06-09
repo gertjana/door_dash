@@ -144,11 +144,14 @@ def render(
     # Left-column row weights (sum normalised to fill the available height).
     # When a section is disabled we just leave it out of the weight list,
     # so the remaining sections grow to fill the space.
-    weights: list[tuple[str, float]] = [("qr", 0.46)]
+    # Indoors is intentionally light because it now only shows
+    # temp/humidity (the battery moved to the version badge), so QR and
+    # Tesla get the freed pixels.
+    weights: list[tuple[str, float]] = [("qr", 0.48)]
     if show_sensors:
-        weights.append(("sensors", 0.26))
+        weights.append(("sensors", 0.20))
     if show_tesla:
-        weights.append(("tesla", 0.28))
+        weights.append(("tesla", 0.32))
 
     total_weight = sum(w_ for _, w_ in weights)
     heights = {name: int(left_widget_h * (w_ / total_weight)) for name, w_ in weights}
