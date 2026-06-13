@@ -14,7 +14,7 @@ from datetime import datetime
 from PIL import Image, ImageDraw
 
 from ...config import Settings
-from ...sources.weather import Weather
+from ...sources.weather import Weather, bearing_to_cardinal, wind_speed_to_beaufort
 from ...timezone import resolve_timezone
 from ..fonts import draw_crisp_text, font
 from ..icons import draw_icon, icon_for_weather_state
@@ -77,7 +77,14 @@ def render(weather: Weather, img: Image.Image, box: Box, settings: Settings | No
     draw_crisp_text(draw, (detail_x, detail_y), cond_label, detail_f)
 
     if weather.wind_speed is not None:
-        wind_line = f"Wind {round(weather.wind_speed)} {weather.wind_unit}"
+        bft = wind_speed_to_beaufort(weather.wind_speed, weather.wind_unit)
+        cardinal = bearing_to_cardinal(weather.wind_bearing)
+        if bft is None:
+            wind_line = "Wind —"
+        elif cardinal:
+            wind_line = f"Wind {bft} {cardinal}"
+        else:
+            wind_line = f"Wind {bft} Bft"
         wind_y = detail_y + line_h
         if wind_y + detail_f.size <= content_bottom:
             draw_crisp_text(draw, (detail_x, wind_y), wind_line, detail_f)

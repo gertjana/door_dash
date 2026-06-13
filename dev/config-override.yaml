@@ -23,7 +23,7 @@ ports:
   "8099/tcp": 8100
 ports_description:
   "8099/tcp": Dashboard image endpoint (LAN, dev port)
-version: "1.2.0-dev"
+version: "1.2.2-dev"
 # Optionally override the version too, e.g. to mark dev builds:
 #   version: "1.0.9-dev"
 # Left unset so the dev variant inherits whatever's in addon/config.yaml.

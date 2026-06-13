@@ -81,6 +81,43 @@ def bearing_to_cardinal(bearing: float | None) -> str | None:
     return _COMPASS_16[idx]
 
 
+# Beaufort upper bounds in km/h — the canonical thresholds (WMO). The
+# index is the Beaufort number; speeds at or below the value at index N
+# fall in force N. Anything above the last entry (force 12) is hurricane
+# force, capped at 12 to keep labels short.
+_BEAUFORT_KMH_UPPER = [1, 5, 11, 19, 28, 38, 49, 61, 74, 88, 102, 117]
+
+
+def wind_speed_to_beaufort(speed: float | None, unit: str | None = "km/h") -> int | None:
+    """Convert a wind speed to its Beaufort-scale force number (0–12).
+
+    The Beaufort thresholds are defined in km/h; values arriving in m/s
+    are converted via the standard 3.6× factor before bucketing. Unknown
+    or unparseable units fall back to km/h on the assumption that most
+    Home Assistant ``weather.*`` integrations report km/h. Returns
+    ``None`` only when the input speed itself is missing/invalid so
+    callers can suppress the row cleanly.
+    """
+    if speed is None:
+        return None
+    try:
+        v = float(speed)
+    except (TypeError, ValueError):
+        return None
+    u = (unit or "").strip().lower()
+    if u in {"m/s", "ms", "meter/s"}:
+        v *= 3.6
+    elif u in {"mph", "mi/h"}:
+        v *= 1.609344
+    elif u in {"kn", "kt", "knot", "knots"}:
+        v *= 1.852
+    # Default and km/h need no conversion.
+    for force, upper in enumerate(_BEAUFORT_KMH_UPPER):
+        if v <= upper:
+            return force
+    return 12
+
+
 def _build_fallback_forecast() -> list[ForecastEntry]:
     """Daily fallback anchored on *today* so dates stay current in dev."""
     today = datetime.now().date()

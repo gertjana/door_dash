@@ -4,6 +4,20 @@ All notable changes to the **ePaper Dashboard** add-on are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## 1.2.1 - 2026-06-13
+
+### Changed
+- Wind line on the dashboard widget now reads `Wind 3 WNW` instead of
+  `Wind 13 km/h` — the speed is bucketed onto the Beaufort scale (0–12)
+  and the cardinal direction (16-point compass) replaces the unit
+  suffix. Falls back to `Wind 3 Bft` when the weather entity doesn't
+  expose a wind bearing. The full weather page keeps the more verbose
+  `5 Bft (WNW)` value.
+
+### Added
+- `wind_speed_to_beaufort()` helper in the weather data layer; converts
+  km/h, m/s, mph or knots to Beaufort using the WMO km/h thresholds.
+
 ## 1.2.0 - 2026-06-09
 
 ### Added

@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING
 from PIL import Image, ImageDraw
 
 from ...sources import weather as weather_src
-from ...sources.weather import bearing_to_cardinal
+from ...sources.weather import bearing_to_cardinal, wind_speed_to_beaufort
 from ...timezone import resolve_timezone
 from ..badge import draw_version_badge
 from ..fonts import draw_crisp_text, font
@@ -199,12 +199,13 @@ def _draw_hero_stats(
     fonts are shrunk so the three rows fit inside the hero's height.
     """
     cardinal = bearing_to_cardinal(weather.wind_bearing)
-    if weather.wind_speed is None:
+    bft = wind_speed_to_beaufort(weather.wind_speed, weather.wind_unit)
+    if bft is None:
         wind_value = "—"
     elif cardinal:
-        wind_value = f"{round(weather.wind_speed)} {weather.wind_unit} ({cardinal})"
+        wind_value = f"{bft} Bft ({cardinal})"
     else:
-        wind_value = f"{round(weather.wind_speed)} {weather.wind_unit}"
+        wind_value = f"{bft} Bft"
 
     pressure_value = (
         f"{weather.pressure:,.0f} {weather.pressure_unit}" if weather.pressure is not None else "—"
