@@ -1,8 +1,8 @@
 """Page 0 — the main dashboard.
 
 This is the original "everything-at-a-glance" page: QR + indoor sensors
-+ Tesla on the left, weather across the top right, calendar list filling
-the remaining right column, with a date/refresh footer in the left
++ Tesla + Energy on the left, weather across the top right, calendar list
+filling the remaining right column, with a date/refresh footer in the left
 column. All layout geometry is owned by this module — when you tweak
 the dashboard, this is the only file you need to touch.
 
@@ -14,6 +14,8 @@ Layout regions::
     |  Indoors            |  Calendar list                     |
     +---------------------+                                    |
     |  Tesla              |                                    |
+    +---------------------+                                    |
+    |  Energy (power)     |                                    |
     +---------------------+                                    |
     |  date+hh:mm refresh |                                    |
     +---------------------+------------------------------------+
@@ -33,6 +35,7 @@ from typing import TYPE_CHECKING
 from PIL import Image, ImageDraw
 
 from ...sources import calendar as calendar_src
+from ...sources import energy as energy_src
 from ...sources import tesla as tesla_src
 from ...sources import weather as weather_src
 from ...sources.local_sensors import LocalSensors
@@ -41,6 +44,7 @@ from ..badge import draw_version_badge
 from ..fonts import draw_crisp_text, font
 from ..widgets import calendar_list, local_sensors, qr, tesla, weather
 from ..widgets.base import Box
+from ..widgets.energy_mini import render as render_energy_mini
 
 if TYPE_CHECKING:
     from ...config import Settings
@@ -144,14 +148,20 @@ def render(
     # Left-column row weights (sum normalised to fill the available height).
     # When a section is disabled we just leave it out of the weight list,
     # so the remaining sections grow to fill the space.
-    # Indoors is intentionally light because it now only shows
-    # temp/humidity (the battery moved to the version badge), so QR and
-    # Tesla get the freed pixels.
-    weights: list[tuple[str, float]] = [("qr", 0.48)]
+    # Sensors, Tesla, and Energy share equal weight so they render at the
+    # same height. QR takes whatever remains above them.
+    equal_weight = 1.0
+    bottom_weights: list[tuple[str, float]] = []
     if show_sensors:
-        weights.append(("sensors", 0.20))
+        bottom_weights.append(("sensors", equal_weight))
     if show_tesla:
-        weights.append(("tesla", 0.32))
+        bottom_weights.append(("tesla", equal_weight))
+    bottom_weights.append(("energy", equal_weight))
+
+    # Give QR proportionally more space: same unit weight × number of
+    # bottom sections, so QR always occupies exactly half the column.
+    qr_weight = equal_weight * len(bottom_weights)
+    weights: list[tuple[str, float]] = [("qr", qr_weight), *bottom_weights]
 
     total_weight = sum(w_ for _, w_ in weights)
     heights = {name: int(left_widget_h * (w_ / total_weight)) for name, w_ in weights}
@@ -176,6 +186,7 @@ def render(
         local_sensors.render(sensors, img, boxes["sensors"])
     if show_tesla:
         tesla.render(tesla_src.fetch(settings), img, boxes["tesla"])
+    render_energy_mini(energy_src.fetch(settings), img, boxes["energy"])
     calendar_list.render(settings, calendar_src.fetch(settings), img, calendar_box)
 
     # Refresh timestamp in the bottom-left footer strip.

@@ -54,12 +54,19 @@ def render(sensors: LocalSensors, img: Image.Image, box: Box) -> None:
     # widget width. Side insets give the values a little breathing
     # room from the column divider on the right and the canvas edge
     # on the left.
+    # The metric block is ~14px label + 28px value = ~42px tall.
+    # Centre it in the space below the title, with a small bottom
+    # padding so the text doesn't sit right against the separator line.
+    bottom_pad = 8
     content_top = box.y + 32
+    content_h = box.h - 32 - bottom_pad
+    metric_h = 14 + 28  # label + value (approximate)
+    top_y = content_top + max(0, (content_h - metric_h) // 2)
+
     side_inset = 10
     half_w = box.w // 2
     tl_x = box.x + side_inset
     tr_x = box.x + half_w + side_inset - 6
-    top_y = content_top + 4
 
     _draw_metric(draw, tl_x, top_y, "Temp", _fmt(sensors.indoor_temp, "°C", "{:.0f}"))
     _draw_metric(draw, tr_x, top_y, "Hum.", _fmt(sensors.indoor_hum, "%", "{:.0f}"))

@@ -4,6 +4,23 @@ All notable changes to the **ePaper Dashboard** add-on are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## 1.2.2 - 2026-06-20
+
+### Added
+- **Energy mini widget** on the dashboard left column (below Tesla): shows
+  the current consumed power as `Power = NNN W`, using the same W/kW
+  formatting as the full energy page.
+
+### Changed
+- **Tesla widget** on the dashboard page trimmed to just the car name title
+  and `battery% · range km` — the cabin temperature line and A/C snowflake
+  indicator have been removed.
+- **Indoors widget** content is now vertically centred within its row,
+  adding breathing room above the separator line below it.
+- Left-column row layout on the dashboard now gives equal height to the
+  Indoors, Tesla, and Energy widgets; QR code takes the remaining space
+  above them (proportional to the number of visible bottom widgets).
+
 ## 1.2.1 - 2026-06-13
 
 ### Changed
