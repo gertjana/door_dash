@@ -4,6 +4,13 @@ All notable changes to the **ePaper Dashboard** add-on are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## 1.2.3 - 2026-08-11
+
+### Changed
+- **Calendar upcoming list**: repeating events with the same title are now
+  capped at 2 occurrences, preventing a single recurring event (e.g.
+  "Ted: Kantoordag") from dominating the list.
+
 ## 1.2.2 - 2026-06-20
 
 ### Added
