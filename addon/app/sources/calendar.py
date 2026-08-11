@@ -172,7 +172,20 @@ def fetch(settings: Settings) -> list[Event]:
                 events.append(ev)
 
     events.sort(key=lambda e: e.start)
-    return events[: settings.max_events]
+
+    # Limit repeating events: keep at most 2 occurrences of any event with
+    # the same summary so a single recurring event (e.g. "Ted: Kantoordag")
+    # cannot dominate the list.
+    summary_counts: dict[str, int] = {}
+    deduplicated: list[Event] = []
+    for ev in events:
+        key = ev.summary.strip().lower()
+        count = summary_counts.get(key, 0)
+        if count < 2:
+            deduplicated.append(ev)
+            summary_counts[key] = count + 1
+
+    return deduplicated[: settings.max_events]
 
 
 def fetch_range(settings: Settings, start: datetime, end: datetime) -> list[Event]:
